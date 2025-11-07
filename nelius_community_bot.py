@@ -345,8 +345,8 @@ async def main():
 
     print("Nelius DAO Bot is running...")
 
-    asyncio.get_event_loop().run_until_complete(set_bot_commands(app))
-    app.run_polling()
+    await set_bot_commands(app)
+
     # === WEBHOOK SETUP ===
     # === WEBHOOK CONFIG ===
     port = int(os.getenv("PORT", PORT))
