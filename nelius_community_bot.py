@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from telegram import BotCommand, Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, MessageHandler, CommandHandler, ConversationHandler, ContextTypes, filters
 
+from generate_and_load_ids import load_to_redis  # import your Social ID loader
 from assign_social_id import assign_social_id  # import your Social ID assignment function
 from nelius_dev import addevent, removeevent, updatepub, allocate  # import dev-only commands
 from set_social_media_handles import setx  # import social media handle setter
@@ -372,4 +373,5 @@ async def main():
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
+    load_to_redis()  # Preload Social IDs into Redis
     asyncio.run(main())
