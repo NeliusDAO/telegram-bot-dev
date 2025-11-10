@@ -13,7 +13,10 @@ async def add_or_update_phone(update: Update, context: ContextTypes.DEFAULT_TYPE
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT phone_number FROM users WHERE telegram_id = ?", (user_id,))
+    cursor.execute(
+        "SELECT phone_number FROM users WHERE telegram_id = %s",
+        (user_id,)
+    )
     record = cursor.fetchone()
     conn.close()
 
@@ -25,6 +28,7 @@ async def add_or_update_phone(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(msg, parse_mode='Markdown')
     return PHONE_ENTRY
 
+
 async def save_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone_number = update.message.text.strip()
 
@@ -35,20 +39,23 @@ async def save_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Validate after formatting
     if not phone_number[1:].isdigit() or len(phone_number) < 8:
         await update.message.reply_text(
-            "❌ Please enter a valid phone number with country code (e.g. 234810...)."
-        , parse_mode='Markdown')
+            "❌ Please enter a valid phone number with country code (e.g. 234810...).",
+            parse_mode='Markdown'
+        )
         return PHONE_ENTRY
 
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE users SET phone_number=? WHERE telegram_id=?",
-        (phone_number, update.effective_user.id),
+        "UPDATE users SET phone_number=%s WHERE telegram_id=%s",
+        (phone_number, update.effective_user.id)
     )
     conn.commit()
     conn.close()
 
-    await update.message.reply_text(f"✅ Your phone number {phone_number} has been saved for giveaways🎉!")
+    await update.message.reply_text(
+        f"✅ Your phone number {phone_number} has been saved for giveaways🎉!"
+    )
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):

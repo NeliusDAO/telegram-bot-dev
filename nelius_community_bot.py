@@ -105,9 +105,7 @@ async def set_bot_commands(app, telegram_id=None):
         BotCommand("setx", "Set your X (Twitter) handle"),
         BotCommand("addphone", "Add your phone number for giveaways"),
         BotCommand("joincommunity", "Join the Nelius community"),
-        BotCommand("addphone", "Add your phone number for giveaways"),
     ]
-
     await app.bot.set_my_commands(commands)
 
 
@@ -116,14 +114,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT social_id, points FROM users WHERE telegram_id=?", (user_id,))
+    cursor.execute(
+        "SELECT social_id, points FROM users WHERE telegram_id=%s",
+        (user_id,)
+    )
     row = cursor.fetchone()
 
     if not row:
-        # ✅ Use your generator instead of f"NEL-{user_id % 10000}"
         social_id = assign_social_id(user_id)
         cursor.execute(
-            "INSERT INTO users (telegram_id, social_id) VALUES (?, ?)",
+            "INSERT INTO users (telegram_id, social_id) VALUES (%s, %s)",
             (user_id, social_id)
         )
         conn.commit()
@@ -135,16 +135,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn.close()
 
-    # Cache the profile in Redis
     cache_user_profile(user_id, social_id, points)
-    
-    # --- Create button menu ---
-    # keyboard = [
-    #     [KeyboardButton("🪪 My ID"), KeyboardButton("🏆 My Points")],
-    #     [KeyboardButton("🎉 Events"), KeyboardButton("👤 My Profile")]
-    # ]
-    # reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
     await update.message.reply_text(msg, reply_markup=MAIN_MENU)
 
 
@@ -155,7 +146,10 @@ async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not profile:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT social_id, points FROM users WHERE telegram_id=?", (user_id,))
+        cursor.execute(
+            "SELECT social_id, points FROM users WHERE telegram_id=%s", 
+            (user_id,)
+        )
         row = cursor.fetchone()
         conn.close()
         if not row:
@@ -176,7 +170,10 @@ async def mypoints(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not profile:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT social_id, points FROM users WHERE telegram_id=?", (user_id,))
+        cursor.execute(
+            "SELECT social_id, points FROM users WHERE telegram_id=%s", 
+            (user_id,)
+        )
         row = cursor.fetchone()
         conn.close()
         if not row:
@@ -196,7 +193,9 @@ async def events(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not events_data:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, title, publicity_score FROM events ORDER BY id DESC")
+        cursor.execute(
+            "SELECT id, title, publicity_score FROM events ORDER BY id DESC"
+        )
         rows = cursor.fetchall()
         conn.close()
 
@@ -212,6 +211,7 @@ async def events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"• {e['title']} — 🗣️ Publicity Score: {e['score']}\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -220,7 +220,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SELECT u.social_id, u.points, s.handle
         FROM users u
         LEFT JOIN social_handles s ON u.id = s.user_id AND s.platform='x'
-        WHERE u.telegram_id=?
+        WHERE u.telegram_id=%s
     """, (update.effective_user.id,))
     row = cursor.fetchone()
     conn.close()
@@ -240,47 +240,6 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(msg, parse_mode="HTML")
 
-# async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     """Display user's profile: social ID, points, and top events."""
-#     user_id = update.effective_user.id
-
-#     profile = get_cached_user_profile(user_id)
-#     if not profile:
-#         conn = sqlite3.connect(DB_PATH)
-#         cursor = conn.cursor()
-#         cursor.execute("SELECT social_id, points FROM users WHERE telegram_id=?", (user_id,))
-#         user = cursor.fetchone()
-#         if not user:
-#             conn.close()
-#             await update.message.reply_text("⚠️ You are not registered yet. Use /start to create your Nelius profile.")
-#             return
-#         social_id, points = user
-#         cache_user_profile(user_id, social_id, points)
-#     else:
-#         social_id, points = profile["social_id"], profile["points"]
-
-#     events_data = get_cached_events_list()
-#     if not events_data:
-#         conn = sqlite3.connect(DB_PATH)
-#         cursor = conn.cursor()
-#         cursor.execute("SELECT title, publicity_score FROM events ORDER BY publicity_score DESC LIMIT 3")
-#         rows = cursor.fetchall()
-#         events_data = [{"title": title, "score": score} for title, score in rows]
-#         cache_events_list(events_data)
-#         conn.close()
-
-#     msg = f"🌐 *Your Nelius Profile*\n\n"
-#     msg += f"🪪 Social ID: `{social_id}`\n"
-#     msg += f"🏆 Points: *{points}*\n"
-
-#     if events_data:
-#         msg += "🎯 *Top Events Supported by Nelius:*\n"
-#         for e in events_data[:3]:
-#             msg += f"• {e['title']} — 🔊 {e['score']}\n"
-#     else:
-#         msg += "📭 No events yet. Check back later!"
-
-#     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def join_community(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
