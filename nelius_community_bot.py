@@ -5,32 +5,27 @@ import logging
 import requests
 import sqlite3
 import json
+import psycopg2
 import redis
 from dotenv import load_dotenv
 from telegram import BotCommand, Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, MessageHandler, CommandHandler, ConversationHandler, ContextTypes, filters
 
+from settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, COMMUNITY_LINK, WEBHOOK_URL, PORT, REDIS_URL, get_db_connection
 from generate_and_load_ids import load_to_redis  # import your Social ID loader
 from assign_social_id import assign_social_id  # import your Social ID assignment function
-from nelius_dev import addevent, removeevent, updatepub, allocate  # import dev-only commands
+from nelius_dev import addevent, removeevent, updatepub, allocate, dump_db  # import dev-only commands
 from set_social_media_handles import setx  # import social media handle setter
-from set_contact_info import PHONE_ENTRY, add_phone, save_phone, cancel # import phone number handlers
+from set_contact_info import PHONE_ENTRY, add_or_update_phone, save_phone, cancel # import phone number handlers
 
 load_dotenv()
-
-DB_PATH = "neliusdao.db"
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-REDIS_URL = os.getenv("REDIS_URL")
-COMMUNITY_LINK = "https://t.me/+P9j1f85xo1ExZTk0"
-WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TELEGRAM_BOT_TOKEN}"
-PORT = int(os.getenv("PORT", 8080))
 
 # Connect to Redis
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
+def init_db():    
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -103,18 +98,21 @@ MAIN_MENU = ReplyKeyboardMarkup(
     is_persistent=True
 )
 
-async def set_bot_commands(app):
+async def set_bot_commands(app, telegram_id=None):
     commands = [
         BotCommand("start", "Show main menu"),
         BotCommand("setx", "Set your X (Twitter) handle"),
         BotCommand("addphone", "Add your phone number for giveaways"),
         BotCommand("joincommunity", "Join the Nelius community"),
+        BotCommand("addphone", "Add your phone number for giveaways"),
     ]
+
     await app.bot.set_my_commands(commands)
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("SELECT social_id, points FROM users WHERE telegram_id=?", (user_id,))
@@ -154,7 +152,7 @@ async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     profile = get_cached_user_profile(user_id)
     if not profile:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT social_id, points FROM users WHERE telegram_id=?", (user_id,))
         row = cursor.fetchone()
@@ -175,7 +173,7 @@ async def mypoints(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = get_cached_user_profile(user_id)
 
     if not profile:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT social_id, points FROM users WHERE telegram_id=?", (user_id,))
         row = cursor.fetchone()
@@ -195,7 +193,7 @@ async def events(update: Update, context: ContextTypes.DEFAULT_TYPE):
     events_data = get_cached_events_list()
 
     if not events_data:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT id, title, publicity_score FROM events ORDER BY id DESC")
         rows = cursor.fetchall()
@@ -214,7 +212,7 @@ async def events(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -306,7 +304,18 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     init_db()
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    
+    add_phone_handler = ConversationHandler(
+    entry_points=[CommandHandler("addphone", add_or_update_phone)],
+    states={
+        PHONE_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)]
+    )
 
+    app.add_handler(add_phone_handler)
+
+    # Basic commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("myid", myid))
     app.add_handler(CommandHandler("mypoints", mypoints))
@@ -318,34 +327,18 @@ async def main():
     # Button interactions
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     
-    # Phone Number Conversation
-    # add_phone_handler = ConversationHandler(
-    #     entry_points=[CommandHandler("addphone", add_phone)],
-    #     states={
-    #         OTP_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, verify_phone)],
-    #         "CONFIRM_OTP": [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_otp)]
-    #     },
-    #     fallbacks=[CommandHandler("cancel", cancel)]
-    # )
-    add_phone_handler = ConversationHandler(
-    entry_points=[CommandHandler("addphone", add_phone)],
-    states={
-        PHONE_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone)]
-    },
-    fallbacks=[CommandHandler("cancel", cancel)]
-    )
-
-    app.add_handler(add_phone_handler)
-    
     # Dev commands (from nelius_dev.py)
     app.add_handler(CommandHandler("addevent", addevent))
     app.add_handler(CommandHandler("removeevent", removeevent))
     app.add_handler(CommandHandler("updatepub", updatepub))
     app.add_handler(CommandHandler("allocate", allocate))
+    app.add_handler(CommandHandler("dump_db", dump_db))
 
     print("Nelius DAO Bot is running...")
 
     await set_bot_commands(app)
+    # asyncio.get_event_loop().run_until_complete(set_bot_commands(app))
+    # app.run_polling()
 
     # === WEBHOOK SETUP ===
     # === WEBHOOK CONFIG ===
