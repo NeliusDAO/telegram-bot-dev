@@ -30,29 +30,30 @@ def init_db():
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        telegram_id INTEGER UNIQUE,
+        id SERIAL PRIMARY KEY,
+        telegram_id BIGINT UNIQUE,
         social_id TEXT UNIQUE,
         phone_number TEXT,
         points INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
-""")
+    """)
 
-    cursor.execute("""CREATE TABLE IF NOT EXISTS events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS events (
+        id SERIAL PRIMARY KEY,
         title TEXT,
         publicity_score INTEGER DEFAULT 0
-    )""")
+    )
+    """)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS social_handles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         platform TEXT NOT NULL,
         handle TEXT,
-        UNIQUE(user_id, platform),
-        FOREIGN KEY(user_id) REFERENCES users(id)
+        UNIQUE(user_id, platform)
     )
     """)
 
