@@ -6,7 +6,7 @@ from words import fruits, colors, adjectives
 LIST_KEY = "nelius:available_ids"
 
 def generate_social_ids():
-    all_ids = [f"{adj}{color}{fruit}" for adj, color, fruit in product(adjectives, colors, fruits)]
+    all_ids = [f"{adj}".capitalize()+f"{color}".capitalize()+f"{fruit}".capitalize() for adj, color, fruit in product(adjectives, colors, fruits)]
     random.shuffle(all_ids)
     print(f"Generated {len(all_ids)} unique Social IDs.")
     return all_ids

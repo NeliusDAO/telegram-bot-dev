@@ -4,20 +4,14 @@ import redis
 from dotenv import load_dotenv
 from telegram.ext import ContextTypes
 from telegram import Update
+from settings import DATABASE_URL, DEV_IDS, REDIS_URL, get_db_connection
+from bot_utils import export_table_to_csv
 
 load_dotenv()
-
-# --- Config ---
-DB_PATH = "neliusdao.db"
-DEV_IDS = [int(x) for x in os.getenv("DEV_IDS", "").split(",") if x]
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+ADMIN_ID = int(os.getenv("ADMIN_IDS", "0"))
 
 # --- Redis setup ---
 r = redis.from_url(REDIS_URL, decode_responses=True)
-
-# --- SQLite helper ---
-def get_db_connection():
-    return sqlite3.connect(DB_PATH)
 
 # --- Decorator for dev-only commands ---
 def dev_only(func):
@@ -103,7 +97,7 @@ async def removeevent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     eid = context.args[0]
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     # Check if event exists
@@ -120,3 +114,22 @@ async def removeevent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     await update.message.reply_text(f"🗑️ Event '{title}' (ID: {eid}) removed successfully.")
+
+@dev_only
+async def dump_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("Unauthorized.")
+        return
+    
+    try:
+        conn = get_db_connection()
+        table_name = "users"  # replace with your table name
+        buffer = export_table_to_csv(conn, table_name)
+
+        await update.message.reply_document(
+            document=buffer,
+            filename=f"{table_name}_dump.csv",
+            caption=f"Database dump of '{table_name}' table ✅"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"Error: {e}")

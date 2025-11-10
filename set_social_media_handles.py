@@ -1,8 +1,7 @@
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 import sqlite3
-
-DB_PATH = "neliusdao.db"
+from settings import get_db_connection
 
 async def setx(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -13,7 +12,7 @@ async def setx(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not handle.startswith("@"):
         handle = "@" + handle
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     # Get or create user
