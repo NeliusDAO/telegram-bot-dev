@@ -11,7 +11,8 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Telegram Bot Info
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-COMMUNITY_LINK = "https://t.me/+P9j1f85xo1ExZTk0"
+TELEGRAM_COMMUNITY_LINK = "https://t.me/+P9j1f85xo1ExZTk0"
+WHATSAPP_COMMUNITY_LINK = "https://chat.whatsapp.com/LRyeXyFIkQcCTHSRzKed1x"
 
 # Web Hook
 WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{TELEGRAM_BOT_TOKEN}"

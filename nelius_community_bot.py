@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from telegram import BotCommand, Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, MessageHandler, CommandHandler, ConversationHandler, ContextTypes, filters
 
-from settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, COMMUNITY_LINK, WEBHOOK_URL, PORT, REDIS_URL, get_db_connection
+from settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_COMMUNITY_LINK, WHATSAPP_COMMUNITY_LINK, WEBHOOK_URL, PORT, REDIS_URL, get_db_connection
 from generate_and_load_ids import load_to_redis  # import your Social ID loader
 from assign_social_id import assign_social_id  # import your Social ID assignment function
 from nelius_dev import addevent, removeevent, updatepub, allocate, dump_db  # import dev-only commands
@@ -103,8 +103,9 @@ async def set_bot_commands(app, telegram_id=None):
     commands = [
         BotCommand("start", "Show main menu"),
         BotCommand("setx", "Set your X (Twitter) handle"),
-        BotCommand("addphone", "Add your phone number for giveaways"),
-        BotCommand("joincommunity", "Join the Nelius community"),
+        BotCommand("addphone", "Add your phone number"),
+        BotCommand("jointelegramcommunity", "Join the Nelius Telegram community"),
+        BotCommand("joinwhatsappcommunity", "Join the Nelius WhatsApp community"),
     ]
     await app.bot.set_my_commands(commands)
 
@@ -241,9 +242,14 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
-async def join_community(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def join_telegram_community(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"🚀 Tap below to join our community:\n\n{COMMUNITY_LINK}"
+        f"🚀 Tap below to join our Telegram community:\n\n{TELEGRAM_COMMUNITY_LINK}"
+    )
+
+async def join_whatsapp_community(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        f"🚀 Tap below to join our WhatsApp community:\n\n{WHATSAPP_COMMUNITY_LINK}"
     )
 
 # --- Button text handler ---
@@ -282,7 +288,8 @@ async def main():
     app.add_handler(CommandHandler("events", events))
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("setx", setx))
-    app.add_handler(CommandHandler("joincommunity", join_community))
+    app.add_handler(CommandHandler("jointelegramcommunity", join_telegram_community))
+    app.add_handler(CommandHandler("joinwhatsappcommunity", join_whatsapp_community))
 
     # Button interactions
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
