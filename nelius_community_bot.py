@@ -104,8 +104,8 @@ async def set_bot_commands(app, telegram_id=None):
         BotCommand("start", "Show main menu"),
         BotCommand("setx", "Set your X (Twitter) handle"),
         BotCommand("addphone", "Add your phone number"),
-        BotCommand("jointelegramcommunity", "Join the Nelius Telegram community"),
-        BotCommand("joinwhatsappcommunity", "Join the Nelius WhatsApp community"),
+        BotCommand("jointelegramcommunity", "Join our Telegram community"),
+        BotCommand("joinwhatsappcommunity", "Join our WhatsApp community"),
     ]
     await app.bot.set_my_commands(commands)
 
