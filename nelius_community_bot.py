@@ -244,12 +244,12 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def join_telegram_community(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"🚀 Tap below to join our Telegram community:\n\n{TELEGRAM_COMMUNITY_LINK}"
+        f"🚀 Tap below to join Nelius Telegram community:\n\n{TELEGRAM_COMMUNITY_LINK}"
     )
 
 async def join_whatsapp_community(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"🚀 Tap below to join our WhatsApp community:\n\n{WHATSAPP_COMMUNITY_LINK}"
+        f"🚀 Tap below to join Nelius WhatsApp community:\n\n{WHATSAPP_COMMUNITY_LINK}"
     )
 
 # --- Button text handler ---
