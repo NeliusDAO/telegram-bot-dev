@@ -103,6 +103,7 @@ async def set_bot_commands(app, telegram_id=None):
     commands = [
         BotCommand("start", "Show main menu"),
         BotCommand("setx", "Set your X (Twitter) handle"),
+        BotCommand("setig", "Set your Instagram handle"),
         BotCommand("addphone", "Add your phone number"),
         BotCommand("jointelegramcommunity", "Join our Telegram community"),
         BotCommand("joinwhatsappcommunity", "Join our WhatsApp community"),
