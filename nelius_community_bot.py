@@ -15,7 +15,7 @@ from settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_COMMUNITY_LINK, 
 from generate_and_load_ids import load_to_redis  # import your Social ID loader
 from assign_social_id import assign_social_id  # import your Social ID assignment function
 from nelius_dev import addevent, removeevent, updatepub, allocate, dump_db  # import dev-only commands
-from set_social_media_handles import setx  # import social media handle setter
+from set_social_media_handles import setx, setig, settiktok  # import social media handle setter
 from set_contact_info import PHONE_ENTRY, add_or_update_phone, save_phone, cancel # import phone number handlers
 
 load_dotenv()
@@ -217,28 +217,54 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    # Fetch user + all handles in one query
     cursor.execute("""
-        SELECT u.social_id, u.points, s.handle
+        SELECT 
+            u.social_id,
+            u.points,
+            u.phone_number,
+            s.platform,
+            s.handle
         FROM users u
-        LEFT JOIN social_handles s ON u.id = s.user_id AND s.platform='x'
-        WHERE u.telegram_id=%s
+        LEFT JOIN social_handles s ON u.id = s.user_id
+        WHERE u.telegram_id = %s
     """, (update.effective_user.id,))
-    row = cursor.fetchone()
+
+    rows = cursor.fetchall()
     conn.close()
 
-    if not row:
+    if not rows:
         await update.message.reply_text("⚠️ You don't have a profile yet. Use /start first.")
         return
 
-    social_id, points, x_handle = row
-    handle_display = x_handle if x_handle else "❌ Not set"
+    # Basic user info (shared across all rows)
+    social_id = rows[0][0]
+    points = rows[0][1]
+    phone_number = rows[0][2] or "❌ Not set"
 
+    # Extract social handles
+    handles = {"x": None, "instagram": None, "tiktok": None}
+
+    for _, _, _, platform, handle in rows:
+        if platform in handles:
+            handles[platform] = handle
+
+    display_x = handles["x"] or "❌ Not set"
+    display_ig = handles["instagram"] or "❌ Not set"
+    display_tt = handles["tiktok"] or "❌ Not set"
+
+    # Build the message
     msg = (
         f"👤 <b>Nelius Profile</b>\n"
         f"🪪 Social ID: <code>{social_id}</code>\n"
         f"🏆 Points: {points}\n"
-        f"🐦 X Handle: {handle_display}"
+        f"📞 Phone: {phone_number}\n\n"
+        f"📱 <b>Social Handles</b>\n"
+        f"🐦 X: {display_x}\n"
+        f"📸 Instagram: {display_ig}\n"
+        f"🎵 TikTok: {display_tt}"
     )
+
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
@@ -288,6 +314,8 @@ async def main():
     app.add_handler(CommandHandler("events", events))
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("setx", setx))
+    app.add_handler(CommandHandler("setig", setig))
+    app.add_handler(CommandHandler("settiktok", settiktok))
     app.add_handler(CommandHandler("jointelegramcommunity", join_telegram_community))
     app.add_handler(CommandHandler("joinwhatsappcommunity", join_whatsapp_community))
 
