@@ -31,22 +31,30 @@ async def addevent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not args:
         await update.message.reply_text(
-            "Usage:\n"
-            "/addevent <title> [instagram_link] [x_link]"
+            "Usage:\n/addevent <title> [instagram_link] [x_link]\n\n"
+            "Example:\n/addevent The God of All Flesh https://instagram.com/post https://x.com/post"
         )
         return
 
-    title = args[0]
+    # Separate links from title
+    title_parts = []
     ig_link = None
     x_link = None
 
-    if len(args) >= 2:
-        ig_link = args[1]
-    if len(args) >= 3:
-        x_link = args[2]
+    for arg in args:
+        if arg.startswith("http://") or arg.startswith("https://"):
+            if not ig_link:
+                ig_link = arg
+            elif not x_link:
+                x_link = arg
+        else:
+            title_parts.append(arg)
+
+    title = " ".join(title_parts)
 
     conn = get_db_connection()
     cursor = conn.cursor()
+
     cursor.execute(
         """
         INSERT INTO events (title, instagram_link, x_link)
@@ -59,8 +67,8 @@ async def addevent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
 
-    # Cache partial data
-    r.hset(f"event:{event_id}", {
+    # Cache partial data for quick access
+    r.hset(f"event:{event_id}", mapping={
         "title": title,
         "publicity_score": 0
     })
@@ -73,36 +81,45 @@ async def addevent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🐦 X: {x_link or '—'}"
     )
 
-
 @dev_only
 async def updateevent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
     if not args:
         await update.message.reply_text(
-            "Usage:\n"
-            "/updateevent <event_id> [title] [instagram_link] [x_link]"
+            "Usage:\n/updateevent <event_id> [title] [instagram_link] [x_link]\n\n"
+            "Example:\n/updateevent 5 The God of All Flesh https://instagram.com/post https://x.com/post"
         )
         return
 
+    # Parse event_id
     try:
         event_id = int(args[0])
     except ValueError:
-        await update.message.reply_text("Event ID must be a number.")
+        await update.message.reply_text("⚠️ Event ID must be a number.")
         return
 
-    title = None
+    # Separate title from links
+    title_parts = []
     ig_link = None
     x_link = None
 
-    if len(args) >= 2:
-        title = args[1]
-    if len(args) >= 3:
-        ig_link = args[2]
-    if len(args) >= 4:
-        x_link = args[3]
+    for arg in args[1:]:
+        if arg.startswith("http://") or arg.startswith("https://"):
+            if not ig_link:
+                ig_link = arg
+            elif not x_link:
+                x_link = arg
+        else:
+            title_parts.append(arg)
 
-    # Build dynamic SQL update
+    title = " ".join(title_parts) if title_parts else None
+
+    if not any([title, ig_link, x_link]):
+        await update.message.reply_text("Nothing to update.")
+        return
+
+    # Build dynamic SQL
     updates = []
     values = []
 
@@ -116,23 +133,22 @@ async def updateevent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         updates.append("x_link=%s")
         values.append(x_link)
 
-    if not updates:
-        await update.message.reply_text("Nothing to update.")
-        return
-
     values.append(event_id)
-
     sql = f"UPDATE events SET {', '.join(updates)} WHERE id=%s"
 
+    # Execute update
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(sql, values)
     conn.commit()
     conn.close()
 
-    # Update cache title only
+    # Update cache partially
+    cache_updates = {}
     if title:
-        r.hset(f"event:{event_id}", "title", title)
+        cache_updates["title"] = title
+    if cache_updates:
+        r.hset(f"event:{event_id}", mapping=cache_updates)
 
     await update.message.reply_text(
         f"✅ Event {event_id} updated!\n"
