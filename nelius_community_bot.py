@@ -269,33 +269,23 @@ async def event_detail_callback(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     keyboard = []
-
     if ig:
         keyboard.append([InlineKeyboardButton("📸 Instagram Post", url=ig)])
     if xlink:
         keyboard.append([InlineKeyboardButton("🐦 X Post", url=xlink)])
 
-    # Add Back button
+    # Back button
     keyboard.append([InlineKeyboardButton("⬅️ Back to Events", callback_data="events_list")])
 
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await query.edit_message_text(
-        msg,
-        parse_mode="Markdown",
-        reply_markup=reply_markup
-    )
-
-async def show_events_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    # Simply call the existing events() function
-    await events(update, context)
+    await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def events_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await show_events_callback(update, context)
+    """Directly show events inline, used for initial events list and back button."""
+    query = getattr(update, "callback_query", None)
+    if query:
+        await query.answer()
+    await events(update, context)  # reuse your existing events() function
+
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db_connection()
@@ -346,7 +336,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📱 <b>Social Handles</b>\n"
         f"🐦 X: {display_x}\n"
         f"📸 Instagram: {display_ig}\n"
-        f"🎵 TikTok: {display_tt}"
+        # f"🎵 TikTok: {display_tt}"
     )
 
     await update.message.reply_text(msg, parse_mode="HTML")
