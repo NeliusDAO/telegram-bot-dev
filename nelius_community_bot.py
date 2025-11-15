@@ -212,28 +212,37 @@ async def events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cache_events_list(events_data)
 
     if not events_data:
-        await update.message.reply_text("📭 No active events yet.")
-        return
-
-    # MESSAGE HEADER
-    msg = "🎉 *Nelius Events*\nTap an event below to view post links."
-
-    # Inline Keyboard of Events
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                f"{e['title']} — ⭐ {e['score']}",
-                callback_data=f"event_{e['id']}"
-            )
+        msg = "📭 No active events yet."
+        keyboard = None
+    else:
+        msg = "🎉 *Nelius Events*\nTap an event below to view post links."
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    f"{e['title']} — ⭐ {e['score']}",
+                    callback_data=f"event_{e['id']}"
+                )
+            ]
+            for e in events_data
         ]
-        for e in events_data
-    ]
 
-    await update.message.reply_text(
-        msg,
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    if update.message:
+        # Called via /events command
+        await update.message.reply_text(
+            msg,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+        )
+    elif update.callback_query:
+        # Called via Back button or other callback
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text(
+            msg,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
+        )
+
 
 async def event_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -405,7 +414,7 @@ async def main():
     app.add_handler(CommandHandler("dump_db", dump_db))
 
     app.add_handler(CallbackQueryHandler(event_detail_callback, pattern=r"^event_\d+$"))
-    app.add_handler(CallbackQueryHandler(events_list_callback, pattern="^events_list$"))
+    app.add_handler(CallbackQueryHandler(events_list_callback, pattern=r"^events_list$"))
 
     print("Nelius DAO Bot is running...")
 
