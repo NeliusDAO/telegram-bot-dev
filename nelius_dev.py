@@ -242,22 +242,40 @@ async def removeevent(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🗑️ Event '{title}' (ID: {eid}) removed successfully."
     )
 
-
 @dev_only
 async def dump_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("Unauthorized.")
         return
-    
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: /dump_db <table_name>\n"
+            "Available tables: users, events, social_handles"
+        )
+        return
+
+    table_name = context.args[0].strip()
+
+    # Validate table name to prevent SQL injection
+    allowed_tables = {"users", "events", "social_handles"}
+    if table_name not in allowed_tables:
+        await update.message.reply_text(
+            f"❌ Table '{table_name}' is not allowed.\n"
+            f"Allowed tables: {', '.join(allowed_tables)}"
+        )
+        return
+
     try:
         conn = get_db_connection()
-        table_name = "users"  # replace with your table name
         buffer = export_table_to_csv(conn, table_name)
+        conn.close()
 
         await update.message.reply_document(
             document=buffer,
             filename=f"{table_name}_dump.csv",
-            caption=f"Database dump of '{table_name}' table ✅"
+            caption=f"✅ Database dump of '{table_name}' table"
         )
     except Exception as e:
         await update.message.reply_text(f"Error: {e}")
+
