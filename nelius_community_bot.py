@@ -42,6 +42,10 @@ def init_db():
     """)
 
     cursor.execute("""
+    DROP TABLE events;
+    """)
+
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS events (
     id SERIAL PRIMARY KEY,
     title TEXT,
