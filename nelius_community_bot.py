@@ -389,9 +389,6 @@ async def main():
     app.add_handler(CommandHandler("settiktok", settiktok))
     app.add_handler(CommandHandler("jointelegramcommunity", join_telegram_community))
     app.add_handler(CommandHandler("joinwhatsappcommunity", join_whatsapp_community))
-
-    # Button interactions
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     
     # Dev commands (from nelius_dev.py)
     app.add_handler(CommandHandler("addevent", addevent))
@@ -401,6 +398,8 @@ async def main():
     app.add_handler(CommandHandler("allocate", allocate))
     app.add_handler(CommandHandler("dump_db", dump_db))
 
+        # Button interactions
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     app.add_handler(CallbackQueryHandler(event_detail_callback, pattern=r"^event_\d+$"))
 
     print("Nelius DAO Bot is running...")
