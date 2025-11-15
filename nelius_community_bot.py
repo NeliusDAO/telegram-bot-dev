@@ -8,7 +8,7 @@ import json
 import psycopg2
 import redis
 from dotenv import load_dotenv
-from telegram import (BotCommand, Update, KeyboardButton, ReplyKeyboardMarkup, 
+from telegram import (BotCommand, BotCommandScopeAllPrivateChats, Update, KeyboardButton, ReplyKeyboardMarkup, 
                     ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup)
 from telegram.ext import (Application, MessageHandler, CommandHandler, ConversationHandler,
                           CallbackQueryHandler, ContextTypes, filters)
@@ -114,6 +114,9 @@ async def set_bot_commands(app, telegram_id=None):
         BotCommand("joinwhatsappcommunity", "Join our WhatsApp community"),
     ]
     await app.bot.set_my_commands(commands)
+    
+    # For all private chats (so users only see these commands in DM with bot)
+    await app.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -215,7 +218,7 @@ async def events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = "📭 No active events yet."
         keyboard = None
     else:
-        msg = "🎉 *Nelius Events*\nTap an event below to view post links."
+        msg = "🎉 *Nelius Events*\nTap an event below to view boost links."
         keyboard = [
             [
                 InlineKeyboardButton(
