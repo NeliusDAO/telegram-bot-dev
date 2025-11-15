@@ -8,13 +8,15 @@ import json
 import psycopg2
 import redis
 from dotenv import load_dotenv
-from telegram import BotCommand, Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import Application, MessageHandler, CommandHandler, ConversationHandler, ContextTypes, filters
+from telegram import (BotCommand, Update, KeyboardButton, ReplyKeyboardMarkup, 
+                    ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup)
+from telegram.ext import (Application, MessageHandler, CommandHandler, ConversationHandler,
+                          CallbackQueryHandler, ContextTypes, filters)
 
 from settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_COMMUNITY_LINK, WHATSAPP_COMMUNITY_LINK, WEBHOOK_URL, PORT, REDIS_URL, get_db_connection
 from generate_and_load_ids import load_to_redis  # import your Social ID loader
 from assign_social_id import assign_social_id  # import your Social ID assignment function
-from nelius_dev import addevent, removeevent, updatepub, allocate, dump_db  # import dev-only commands
+from nelius_dev import addevent, updateevent, removeevent, updatepub, allocate, dump_db  # import dev-only commands
 from set_social_media_handles import setx, setig, settiktok  # import social media handle setter
 from set_contact_info import PHONE_ENTRY, add_or_update_phone, save_phone, cancel # import phone number handlers
 
@@ -41,9 +43,12 @@ def init_db():
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS events (
-        id SERIAL PRIMARY KEY,
-        title TEXT,
-        publicity_score INTEGER DEFAULT 0
+    id SERIAL PRIMARY KEY,
+    title TEXT,
+    instagram_link TEXT,
+    x_link TEXT,
+    tik_tok_link TEXT,
+    publicity_score INTEGER DEFAULT 0
     )
     """)
 
@@ -201,17 +206,82 @@ async def events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rows = cursor.fetchall()
         conn.close()
 
-        events_data = [{"id": eid, "title": title, "score": score} for eid, title, score in rows]
+        events_data = [
+            {"id": eid, "title": title, "score": score} for eid, title, score in rows
+        ]
         cache_events_list(events_data)
 
     if not events_data:
         await update.message.reply_text("📭 No active events yet.")
         return
 
-    msg = "🎉 *Nelius Events:*\n\n"
-    for e in events_data:
-        msg += f"• {e['title']} — 🗣️ Publicity Score: {e['score']}\n"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    # MESSAGE HEADER
+    msg = "🎉 *Nelius Events*\nTap an event below to view boost links."
+
+    # Inline Keyboard of Events
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                f"{e['title']} — ⭐ {e['score']}",
+                callback_data=f"event_{e['id']}"
+            )
+        ]
+        for e in events_data
+    ]
+
+    await update.message.reply_text(
+        msg,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def event_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    if not data.startswith("event_"):
+        return
+
+    event_id = int(data.split("_")[1])
+
+    # Fetch event info
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT title, publicity_score, instagram_link, x_link FROM events WHERE id = %s",
+        (event_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        await query.edit_message_text("❌ Event not found.")
+        return
+
+    title, score, ig, xlink = row
+
+    msg = (
+        f"🎪 *{title}*\n"
+        f"⭐ Publicity Score: *{score}*\n\n"
+        f"Use the buttons below to visit the IG or X post.\n"
+        f"Repost it any time you want to boost this event!"
+    )
+
+    keyboard = []
+
+    if ig:
+        keyboard.append([InlineKeyboardButton("📸 Instagram Post", url=ig)])
+    if xlink:
+        keyboard.append([InlineKeyboardButton("🐦 X Post", url=xlink)])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        msg,
+        parse_mode="Markdown",
+        reply_markup=reply_markup
+    )
 
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -325,10 +395,13 @@ async def main():
     
     # Dev commands (from nelius_dev.py)
     app.add_handler(CommandHandler("addevent", addevent))
+    app.add_handler(CommandHandler("updateevent", updateevent))
     app.add_handler(CommandHandler("removeevent", removeevent))
     app.add_handler(CommandHandler("updatepub", updatepub))
     app.add_handler(CommandHandler("allocate", allocate))
     app.add_handler(CommandHandler("dump_db", dump_db))
+
+    app.add_handler(CallbackQueryHandler(event_detail_callback, pattern=r"^event_\d+$"))
 
     print("Nelius DAO Bot is running...")
 
