@@ -42,10 +42,6 @@ def init_db():
     """)
 
     cursor.execute("""
-    DROP TABLE events;
-    """)
-
-    cursor.execute("""
     CREATE TABLE IF NOT EXISTS events (
     id SERIAL PRIMARY KEY,
     title TEXT,
@@ -220,7 +216,7 @@ async def events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # MESSAGE HEADER
-    msg = "🎉 *Nelius Events*\nTap an event below to view boost links."
+    msg = "🎉 *Nelius Events*\nTap an event below to view post links."
 
     # Inline Keyboard of Events
     keyboard = [
@@ -279,6 +275,9 @@ async def event_detail_callback(update: Update, context: ContextTypes.DEFAULT_TY
     if xlink:
         keyboard.append([InlineKeyboardButton("🐦 X Post", url=xlink)])
 
+    # Add Back button
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Events", callback_data="events_list")])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await query.edit_message_text(
@@ -287,6 +286,16 @@ async def event_detail_callback(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup=reply_markup
     )
 
+async def show_events_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    # Simply call the existing events() function
+    await events(update, context)
+
+async def events_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await show_events_callback(update, context)
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db_connection()
@@ -406,6 +415,7 @@ async def main():
     app.add_handler(CommandHandler("dump_db", dump_db))
 
     app.add_handler(CallbackQueryHandler(event_detail_callback, pattern=r"^event_\d+$"))
+    app.add_handler(CallbackQueryHandler(events_list_callback, pattern="^events_list$"))
 
     print("Nelius DAO Bot is running...")
 
