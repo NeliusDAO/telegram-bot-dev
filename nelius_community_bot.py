@@ -53,9 +53,14 @@ def init_db():
     """)
 
     cursor.execute("""
+                   DROP TABLE IF EXISTS social_handles
+                   """)
+    
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS social_handles (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        social_id TEXT REFERENCES users(social_id) ON DELETE CASCADE,
         platform TEXT NOT NULL,
         handle TEXT,
         UNIQUE(user_id, platform)
