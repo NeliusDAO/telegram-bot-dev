@@ -51,10 +51,6 @@ def init_db():
     publicity_score INTEGER DEFAULT 0
     )
     """)
-
-    cursor.execute("""
-                   DROP TABLE IF EXISTS social_handles
-                   """)
     
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS social_handles (
