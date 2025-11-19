@@ -8,7 +8,7 @@ import json
 import psycopg2
 import redis
 from dotenv import load_dotenv
-from telegram import (BotCommand, BotCommandScopeAllPrivateChats, Update, KeyboardButton, ReplyKeyboardMarkup, 
+from telegram import (BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats, Update, KeyboardButton, ReplyKeyboardMarkup, 
                     ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup)
 from telegram.ext import (Application, MessageHandler, CommandHandler, ConversationHandler,
                           CallbackQueryHandler, ContextTypes, filters)
@@ -114,7 +114,7 @@ async def set_bot_commands(app, telegram_id=None):
         BotCommand("jointelegramcommunity", "Join our Telegram community"),
         BotCommand("joinwhatsappcommunity", "Join our WhatsApp community"),
     ]
-    await app.bot.set_my_commands(commands)
+    await app.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
     
     # For all private chats (so users only see these commands in DM with bot)
     await app.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
