@@ -8,7 +8,7 @@ import json
 import psycopg2
 import redis
 from dotenv import load_dotenv
-from telegram import (BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats, Update, KeyboardButton, ReplyKeyboardMarkup, 
+from telegram import (Update, KeyboardButton, ReplyKeyboardMarkup, 
                     ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup)
 from telegram.ext import (Application, MessageHandler, CommandHandler, ConversationHandler,
                           CallbackQueryHandler, ContextTypes, filters)
@@ -16,7 +16,8 @@ from telegram.ext import (Application, MessageHandler, CommandHandler, Conversat
 from settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_COMMUNITY_LINK, WHATSAPP_COMMUNITY_LINK, WEBHOOK_URL, PORT, REDIS_URL, get_db_connection
 from generate_and_load_ids import load_to_redis  # import your Social ID loader
 from assign_social_id import assign_social_id  # import your Social ID assignment function
-from nelius_dev import addevent, updateevent, removeevent, updatepub, allocate, dump_db  # import dev-only commands
+from nelius_dev import (set_bot_commands, refresh_bot_commands, addevent, updateevent, removeevent,
+                        updatepub, allocate, dump_db)  # import dev-only commands
 from set_social_media_handles import setx, setig, settiktok  # import social media handle setter
 from set_contact_info import PHONE_ENTRY, add_or_update_phone, save_phone, cancel # import phone number handlers
 
@@ -104,20 +105,6 @@ MAIN_MENU = ReplyKeyboardMarkup(
     one_time_keyboard=False,
     is_persistent=True
 )
-
-async def set_bot_commands(app, telegram_id=None):
-    commands = [
-        BotCommand("start", "Show main menu"),
-        BotCommand("setx", "Set your X (Twitter) handle"),
-        BotCommand("setig", "Set your Instagram handle"),
-        BotCommand("addphone", "Add your phone number"),
-        BotCommand("jointelegramcommunity", "Join our Telegram community"),
-        BotCommand("joinwhatsappcommunity", "Join our WhatsApp community"),
-    ]
-    await app.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
-    
-    # For all private chats (so users only see these commands in DM with bot)
-    await app.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -415,6 +402,7 @@ async def main():
     app.add_handler(CommandHandler("removeevent", removeevent))
     app.add_handler(CommandHandler("updatepub", updatepub))
     app.add_handler(CommandHandler("allocate", allocate))
+    app.add_handler(CommandHandler("refreshbotcommands", refresh_bot_commands))
     app.add_handler(CommandHandler("dump_db", dump_db))
 
     app.add_handler(CallbackQueryHandler(event_detail_callback, pattern=r"^event_\d+$"))
