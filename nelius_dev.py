@@ -3,7 +3,7 @@ import sqlite3
 import redis
 from dotenv import load_dotenv
 from telegram.ext import ContextTypes
-from telegram import Update
+from telegram import Update, BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats
 from settings import DATABASE_URL, DEV_IDS, REDIS_URL, get_db_connection
 from bot_utils import export_table_to_csv
 
@@ -12,6 +12,7 @@ ADMIN_ID = int(os.getenv("ADMIN_IDS", "0"))
 
 # --- Redis setup ---
 r = redis.from_url(REDIS_URL, decode_responses=True)
+
 
 # --- Decorator for dev-only commands ---
 def dev_only(func):
@@ -22,6 +23,48 @@ def dev_only(func):
             return
         return await func(update, context)
     return wrapper
+
+async def set_bot_commands(app, telegram_id=None):
+    commands = [
+        BotCommand("start", "Show main menu"),
+        BotCommand("setx", "Set your X (Twitter) handle"),
+        BotCommand("setig", "Set your Instagram handle"),
+        BotCommand("addphone", "Add your phone number"),
+        BotCommand("jointelegramcommunity", "Join our Telegram community"),
+        BotCommand("joinwhatsappcommunity", "Join our WhatsApp community"),
+    ]
+    await app.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+    
+    # For all private chats (so users only see these commands in DM with bot)
+    await app.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+
+
+async def force_refresh_bot_commands(app):
+    # 1. Clear global commands
+    await app.bot.delete_my_commands(scope=BotCommandScopeDefault())
+
+    # 2. Clear private chat commands
+    await app.bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
+
+    # 3. Re-set your commands again
+    await set_bot_commands(app)
+
+    print("Bot commands refreshed successfully!")
+
+
+@dev_only
+async def refresh_bot_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    await update.message.reply_text("🔄 Refreshing bot commands…")
+
+    try:
+        await force_refresh_bot_commands(context.application)
+
+        await update.message.reply_text("✅ Bot commands refreshed for all users!")
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to refresh commands:\n{e}")
 
 
 # --- /addevent ---
