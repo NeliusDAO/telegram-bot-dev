@@ -3,7 +3,7 @@ import sqlite3
 import redis
 from dotenv import load_dotenv
 from telegram.ext import ContextTypes
-from telegram import Update, BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats
+from telegram import Update, BotCommand, BotCommandScopeAllChatAdministrators, BotCommandScopeDefault, BotCommandScopeAllPrivateChats
 from settings import DATABASE_URL, DEV_IDS, REDIS_URL, get_db_connection
 from bot_utils import export_table_to_csv
 
@@ -37,7 +37,7 @@ async def set_bot_commands(app, telegram_id=None):
     
     # For all private chats (so users only see these commands in DM with bot)
     await app.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
-
+    await app.bot.set_my_commands(commands, scope=BotCommandScopeAllChatAdministrators())
 
 async def force_refresh_bot_commands(app):
     # 1. Clear global commands
@@ -46,7 +46,10 @@ async def force_refresh_bot_commands(app):
     # 2. Clear private chat commands
     await app.bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
 
-    # 3. Re-set your commands again
+    # 3. Clear chat admin commands
+    await app.bot.delete_my_commands(scope=BotCommandScopeAllChatAdministrators())
+
+    # 4. Re-set your commands again
     await set_bot_commands(app)
 
     print("Bot commands refreshed successfully!")
