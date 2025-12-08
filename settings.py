@@ -1,6 +1,7 @@
 import os
 import psycopg
 from dotenv import load_dotenv
+import sqlite3
 
 load_dotenv()
 
