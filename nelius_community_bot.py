@@ -5,7 +5,7 @@ import logging
 import requests
 import sqlite3
 import json
-import psycopg2
+import psycopg
 import redis
 from dotenv import load_dotenv
 from telegram import (Update, KeyboardButton, ReplyKeyboardMarkup, 

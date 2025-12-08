@@ -1,5 +1,5 @@
 import os
-import psycopg2
+import psycopg
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,9 +21,12 @@ PORT = int(os.getenv("PORT", 8080))
 # --- SQL helper ---
 def get_db_connection():
     if DATABASE_URL.startswith("postgres"):
-        conn = psycopg2.connect(DATABASE_URL)
+        # psycopg3 connection (works with Supabase Session Pooler)
+        return psycopg.connect(DATABASE_URL)
+
     elif DATABASE_URL.startswith("sqlite"):
         DB_PATH = DATABASE_URL.replace("sqlite:///", "")
-        import sqlite3
-        conn = sqlite3.connect(DB_PATH)
-    return conn
+        return sqlite3.connect(DB_PATH)
+
+    else:
+        raise ValueError("Unsupported DATABASE_URL format")
