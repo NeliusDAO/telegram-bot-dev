@@ -200,7 +200,14 @@ async def events(update: Update, context: ContextTypes.DEFAULT_TYPE):
         events_data = [
             {"id": eid, "title": title, "score": score} for eid, title, score in rows
         ]
+        # 🔥 Sort by score (highest first)
+        events_data.sort(key=lambda x: x["score"], reverse=True)
+
         cache_events_list(events_data)
+
+    else:
+        # If cached, also ensure sorted
+        events_data = sorted(events_data, key=lambda x: x["score"], reverse=True)
 
     if not events_data:
         msg = "📭 No active events yet."
