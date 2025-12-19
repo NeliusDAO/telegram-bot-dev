@@ -266,7 +266,7 @@ async def event_detail_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("❌ Event not found.")
         return
 
-    title, score, ig, xlink = row
+    title, score, iglink, xlink = row
 
     msg = (
         f"🎪 *{title}*\n"
@@ -276,8 +276,8 @@ async def event_detail_callback(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     keyboard = []
-    if ig:
-        keyboard.append([InlineKeyboardButton("📸 Instagram Post", url=ig)])
+    if iglink:
+        keyboard.append([InlineKeyboardButton("📸 Instagram Post", url=iglink)])
     if xlink:
         keyboard.append([InlineKeyboardButton("🐦 X Post", url=xlink)])
 

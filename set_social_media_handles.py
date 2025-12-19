@@ -82,7 +82,7 @@ async def setig(update: Update, context: ContextTypes.DEFAULT_TYPE):
         VALUES (%s, %s, %s)
         ON CONFLICT (user_id, platform)
         DO UPDATE SET handle = EXCLUDED.handle
-    """, (user_id, "ig", handle))
+    """, (user_id, "instagram", handle))
 
     conn.commit()
     conn.close()
