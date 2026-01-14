@@ -17,7 +17,7 @@ from settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_COMMUNITY_LINK, 
 from generate_and_load_ids import load_to_redis  # import your Social ID loader
 from assign_social_id import assign_social_id  # import your Social ID assignment function
 from nelius_dev import (set_bot_commands, refresh_bot_commands, addevent, updateevent, removeevent,
-                        updatepub, allocate, dump_db)  # import dev-only commands
+                        updatepub, allocate, dump_db, airtimereward)  # import dev-only commands
 from set_social_media_handles import setx, setig, settiktok  # import social media handle setter
 from set_contact_info import PHONE_ENTRY, add_or_update_phone, save_phone, cancel # import phone number handlers
 
@@ -411,6 +411,7 @@ async def main():
     app.add_handler(CommandHandler("allocate", allocate))
     app.add_handler(CommandHandler("refreshbotcommands", refresh_bot_commands))
     app.add_handler(CommandHandler("dump_db", dump_db))
+    app.add_handler(CommandHandler("airtimereward", airtimereward))
 
     app.add_handler(CallbackQueryHandler(event_detail_callback, pattern=r"^event_\d+$"))
     app.add_handler(CallbackQueryHandler(events_list_callback, pattern=r"^events_list$"))

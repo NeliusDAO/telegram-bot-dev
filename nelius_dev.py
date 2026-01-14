@@ -4,8 +4,9 @@ import redis
 from dotenv import load_dotenv
 from telegram.ext import ContextTypes
 from telegram import Update, BotCommand, BotCommandScopeAllChatAdministrators, BotCommandScopeDefault, BotCommandScopeAllPrivateChats
-from settings import DATABASE_URL, DEV_IDS, REDIS_URL, get_db_connection
+from settings import BLEEPRS_API_KEY, DATABASE_URL, DEV_IDS, REDIS_URL, get_db_connection
 from bot_utils import export_table_to_csv
+from rewards.airtime_rewards import rewards
 
 load_dotenv()
 ADMIN_ID = int(os.getenv("ADMIN_IDS", "0"))
@@ -287,6 +288,26 @@ async def removeevent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"🗑️ Event '{title}' (ID: {eid}) removed successfully."
     )
+
+
+@dev_only
+async def airtimereward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /airtimereward <phone_number> <amount>")
+        return
+
+    phone = context.args[0]
+    amount = int(context.args[1])
+
+    # Call the Bleeprs airtime client
+    client = rewards.BleeprsAirtimeClient(BLEEPRS_API_KEY)
+    result = client.purchase_airtime(phone, amount)
+
+    if 'error' in result:
+        await update.message.reply_text(f"Failed to share airtime: {result['error']}")
+    else:
+        await update.message.reply_text(f"Successfully shared ₦{amount} airtime to {phone}")
+
 
 @dev_only
 async def dump_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
