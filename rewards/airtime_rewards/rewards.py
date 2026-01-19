@@ -1,17 +1,49 @@
 import requests
 import json
 import time
-import subprocess
 import os
 from typing import List, Dict, Optional
 from datetime import datetime
+from urllib.parse import urlencode
 
 from settings import BLEEPRS_API_KEY
 
 
-def get_carrier_from_phone(phone_number: str) -> Optional[str]:
+def get_network_from_prefix(phone_number: str) -> Optional[str]:
     """
-    Call getNetwork.js to get the carrier for a phone number.
+    Get carrier from phone number prefix (local lookup).
+    
+    Args:
+        phone_number: Phone number to look up
+        
+    Returns:
+        Carrier name or None if unknown
+    """
+    # Normalize number: remove spaces, dashes, +234
+    number = phone_number.replace(' ', '').replace('-', '')
+    
+    if number.startswith('+234'):
+        number = '0' + number[4:]
+    
+    prefix = number[:4]
+    
+    networks = {
+        'MTN': ['0803', '0806', '0703', '0706', '0813', '0816', '0810', '0814', '0903', '0906', '0913'],
+        'Airtel': ['0802', '0808', '0708', '0812', '0701', '0902', '0907', '0901'],
+        'Glo': ['0805', '0807', '0705', '0815', '0811', '0905'],
+        '9mobile': ['0809', '0817', '0818', '0909', '0908']
+    }
+    
+    for network, prefixes in networks.items():
+        if prefix in prefixes:
+            return network
+    
+    return None
+
+
+def get_network_from_api(phone_number: str) -> Optional[str]:
+    """
+    Get carrier from phone number using apilayer API.
     
     Args:
         phone_number: Phone number to look up
@@ -20,49 +52,65 @@ def get_carrier_from_phone(phone_number: str) -> Optional[str]:
         Carrier name (first word, lowercase) or None if error
     """
     try:
-        # Path to getNetwork.js relative to this file
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        script_path = os.path.join(script_dir, 'getNetwork.js')
+        base_url = 'http://apilayer.net/api/validate'
+        access_key = os.getenv('PHONEVERIFY_API_KEY', '')
         
-        # Call Node.js script with phone number as argument
-        result = subprocess.run(
-            ['node', script_path, phone_number],
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            timeout=10
-        )
-        
-        if result.returncode != 0:
-            print(f"Error calling getNetwork.js: {result.stderr}")
+        if not access_key:
             return None
         
-        # Parse JSON output from stdout
-        # Extract JSON from stdout (may contain dotenv logs before JSON)
-        output = result.stdout.strip()
-        if not output:
-            print(f"getNetwork.js returned empty output for {phone_number}")
-            return None
+        params = {
+            'access_key': access_key,
+            'number': phone_number,
+            'country_code': 'NG'
+        }
         
-        # Try to find JSON in the output (look for {"carrier" specifically)
-        json_start = output.find('{"carrier"')
-        if json_start == -1:
-            print(f"No JSON found in getNetwork.js output: {output[:100]}")
-            return None
+        url = f"{base_url}?{urlencode(params)}"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
         
-        json_str = output[json_start:]
-        data = json.loads(json_str)
-        return data.get('carrier')
-    except json.JSONDecodeError as e:
-        print(f"Failed to parse getNetwork.js output: {e}")
+        data = response.json()
+        
+        # Extract carrier (robust against different API shapes)
+        carrier_raw = None
+        if data:
+            if isinstance(data.get('carrier'), str):
+                carrier_raw = data['carrier']
+            elif isinstance(data.get('carrier'), dict):
+                carrier_raw = data['carrier'].get('name') or data['carrier'].get('provider')
+            elif isinstance(data.get('provider'), str):
+                carrier_raw = data['provider']
+            elif isinstance(data.get('carrier_name'), str):
+                carrier_raw = data['carrier_name']
+        
+        if carrier_raw:
+            carrier_first_word = carrier_raw.strip().split()[0].lower()
+            return carrier_first_word
+        
         return None
-    except subprocess.TimeoutExpired:
-        print("getNetwork.js call timed out")
+    except requests.exceptions.RequestException as e:
+        print(f"Error calling apilayer API: {e}")
         return None
     except Exception as e:
-        print(f"Error getting carrier: {e}")
+        print(f"Error getting carrier from API: {e}")
         return None
+
+
+def get_carrier_from_phone(phone_number: str) -> Optional[str]:
+    """
+    Get the carrier for a phone number using API lookup.
+    
+    Args:
+        phone_number: Phone number to look up
+        
+    Returns:
+        Carrier name (lowercase) or None if error
+    """
+    # Use API lookup
+    carrier = get_network_from_api(phone_number)
+    if carrier:
+        return carrier
+    
+    return None
 
 
 class BleeprsAirtimeClient:
@@ -283,4 +331,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    pass
