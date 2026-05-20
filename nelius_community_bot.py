@@ -571,7 +571,7 @@ async def main():
     
     # Base URL should be just your domain: "https://your-bot-name.onrender.com"
     # Do NOT include the token in this WEBHOOK_URL string!
-    base_url = WEBHOOK_URL
+    base_url = os.getenv("WEBHOOK_URL")
 
     print(f"🚀 Starting webhook server on port {port}...")
 
