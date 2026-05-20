@@ -361,6 +361,7 @@ async def join_whatsapp_community(update: Update, context: ContextTypes.DEFAULT_
 # --- Button text handler ---
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    
     if text == "🪪 My ID":
         await myid(update, context)
     elif text == "🏆 My Points":
@@ -543,7 +544,7 @@ async def main():
     app.add_handler(CommandHandler("joinwhatsappcommunity", join_whatsapp_community))
 
     # Button interactions
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
+    app.add_handler(MessageHandler(filters.Text(MAIN_MENU), handle_buttons))
     
     # Dev commands (from nelius_dev.py)
     app.add_handler(CommandHandler("addevent", addevent))
