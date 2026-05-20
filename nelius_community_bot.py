@@ -9,7 +9,7 @@ from telegram.ext import (Application, MessageHandler, CommandHandler, Conversat
                           CallbackQueryHandler, ContextTypes, filters)
 
 from bot.redis_client import cache_user_profile, get_cached_user_profile, cache_events_list, get_cached_events_list
-from config.settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_COMMUNITY_LINK, WHATSAPP_COMMUNITY_LINK, WEBHOOK_URL, PORT, REDIS_URL
+from config.settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_COMMUNITY_LINK, WHATSAPP_COMMUNITY_LINK, WEBHOOK_URL, PORT, init_db_pool, close_db_pool
 from bot.generate_and_load_ids import load_to_redis  # import your Social ID loader
 from bot.variables import emoji_map
 
@@ -384,7 +384,7 @@ async def post_init(application: Application):
     print("✅ Database pool created.")
     
     # 3. Initialize tables using the pool we just created!
-    await init_db(application.bot_data['db_pool'])
+    await init_db_pool(application.bot_data['db_pool'])
     
     # 4. Set bot commands
     await set_bot_commands(application)
@@ -565,7 +565,7 @@ async def main():
     port = PORT or 10000
     
     # 2. Clean up the base URL so we don't accidentally get double slashes
-    base_url = WEBHOOK_URL.rstrip("/")  # Remove trailing slash if present
+    webhook_url = WEBHOOK_URL.rstrip("/")  # Remove trailing slash if present
     
     # Clear any old conflicting webhook settings
     await app.bot.delete_webhook()
@@ -580,11 +580,10 @@ async def main():
         listen="0.0.0.0",
         port=port,
         url_path=TELEGRAM_BOT_TOKEN,
-        # We append the token here so Telegram and your server are looking at the exact same path!
-        webhook_url=f"{base_url}/{TELEGRAM_BOT_TOKEN}", 
+        webhook_url=webhook_url, 
     )
 
-    print(f"Webhook server running at {base_url}/{TELEGRAM_BOT_TOKEN[:5]}... Waiting for updates...")
+    print(f"Webhook server running at {webhook_url}[:-15]... Waiting for updates...")
 
     # === SAFE RENDER SHUTDOWN ===
     stop_signal = asyncio.Event()
