@@ -578,8 +578,19 @@ async def main():
 
     print("Webhook server running. Waiting for Telegram updates...")
 
-     # Keep it running forever
-    await asyncio.Event().wait()
+    # === SAFE RENDER SHUTDOWN ===
+    # Keep it running forever, but catch Render's stop signal cleanly
+    stop_signal = asyncio.Event()
+    try:
+        await stop_signal.wait()
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        pass  # Render triggered a restart
+    finally:
+        print("\n🛑 Shutting down gracefully...")
+        await app.updater.stop()
+        await app.stop()
+        await app.shutdown()
+        print("✅ Shutdown complete.")
 
 if __name__ == "__main__":
     asyncio.run(main())
