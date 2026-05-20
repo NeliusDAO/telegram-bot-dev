@@ -1,3 +1,13 @@
+emoji_map = {
+            "instagram": "📸",
+            "x": "🐦",
+            "tiktok": "🎵",
+            "youtube": "▶️",
+            "linkedin": "💼",
+            "facebook": "📘",
+            "bsky": "🦋"
+        }
+
 fruits = [
     "apple", "apricot", "avocado", "banana", "berry", "blackberry", "blueberry", "cantaloupe",
     "cherry", "coconut", "cranberry", "date", "dragonfruit", "fig", "grape", "guava",
