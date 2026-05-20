@@ -509,6 +509,15 @@ async def main():
         .build()
     )
 
+    # Button interactions
+    # Extract the raw .text property from each KeyboardButton object
+    flat_main_menu = [button.text for row in MAIN_MENU.keyboard for button in row]
+
+    # === 2. PLACE CATCHERS IN CORRECT PRIORITY ORDER ===
+    
+    # First: Intercept main menu button presses immediately (acts as a global escape hatch)
+    app.add_handler(MessageHandler(filters.Text(flat_main_menu), handle_buttons))
+
     onboarding_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_onboarding)],
         states={
@@ -542,10 +551,6 @@ async def main():
     app.add_handler(CommandHandler("settiktok", settiktok))
     app.add_handler(CommandHandler("jointelegramcommunity", join_telegram_community))
     app.add_handler(CommandHandler("joinwhatsappcommunity", join_whatsapp_community))
-
-    # Button interactions
-    flat_main_menu = [button for row in MAIN_MENU.keyboard for button in row]
-    app.add_handler(MessageHandler(filters.Text(flat_main_menu), handle_buttons))
     
     # Dev commands (from nelius_dev.py)
     app.add_handler(CommandHandler("addevent", addevent))
