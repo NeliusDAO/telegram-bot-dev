@@ -560,26 +560,33 @@ async def main():
 
     print("🚀 Nelius DAO Bot is running...")
 
-    # === WEBHOOK SETUP ===
-    port = PORT
+# === WEBHOOK SETUP ===
+    # 1. We MUST grab the dynamic port Render provides, defaulting to 10000 if testing locally
+    port = PORT or 10000
+    
+    # 2. Clean up the base URL so we don't accidentally get double slashes
+    base_url = WEBHOOK_URL.rstrip("/")  # Remove trailing slash if present
+    
+    # Clear any old conflicting webhook settings
     await app.bot.delete_webhook()
-    await app.bot.set_webhook(WEBHOOK_URL)
 
-    print(f"Webhook set at {WEBHOOK_URL} listening on port {port}...")
+    print(f"Starting server on dynamic Render port {port}...")
 
     await app.initialize()
     await app.start()
+    
+    # 3. start_webhook handles BOTH opening the server and telling Telegram the correct URL
     await app.updater.start_webhook(
         listen="0.0.0.0",
         port=port,
         url_path=TELEGRAM_BOT_TOKEN,
-        webhook_url=WEBHOOK_URL,
+        # We append the token here so Telegram and your server are looking at the exact same path!
+        webhook_url=f"{base_url}/{TELEGRAM_BOT_TOKEN}", 
     )
 
-    print("Webhook server running. Waiting for Telegram updates...")
+    print(f"Webhook server running at {base_url}/{TELEGRAM_BOT_TOKEN[:5]}... Waiting for updates...")
 
     # === SAFE RENDER SHUTDOWN ===
-    # Keep it running forever, but catch Render's stop signal cleanly
     stop_signal = asyncio.Event()
     try:
         await stop_signal.wait()
