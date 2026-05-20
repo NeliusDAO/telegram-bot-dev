@@ -400,7 +400,7 @@ async def post_shutdown(application: Application):
 
 
 # ------------------------
-# Main Entry Point
+# Main Entry Point Locally (for development/testing)
 # ------------------------
 # async def main():
 #     # 1. Start external services natively inside the main loop
@@ -465,8 +465,8 @@ async def post_shutdown(application: Application):
 #     app.add_handler(CallbackQueryHandler(event_detail_callback, pattern=r"^event_\d+$"))
 #     app.add_handler(CallbackQueryHandler(events_list_callback, pattern=r"^events_list$"))
 
-#     # 4. Set bot commands natively
-#     await set_bot_commands(app)
+#     # 4. Set bot commands natively (no need given it is set in post_init)
+#    # await set_bot_commands(app)
 
 #     # 5. MANUALLY START THE BOT (Replaces app.run_polling())
 #     await app.initialize()
@@ -500,8 +500,6 @@ async def post_shutdown(application: Application):
 # Main Entry Point
 # ------------------------
 async def main():
-    await load_to_redis()  # Preload Social IDs into Redis
-
     app = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
@@ -510,25 +508,23 @@ async def main():
         .build()
     )
 
-    # app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
     onboarding_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start_onboarding)],
-    states={
-        PHONE_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone_onboarding)],
-        X_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_x_handle)],
-        IG_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_ig_handle)],
-        TIKTOK_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, finish_onboarding)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel_onboarding)]
-)
+        entry_points=[CommandHandler("start", start_onboarding)],
+        states={
+            PHONE_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone_onboarding)],
+            X_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_x_handle)],
+            IG_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_ig_handle)],
+            TIKTOK_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, finish_onboarding)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_onboarding)]
+    )
     
     add_phone_handler = ConversationHandler(
-    entry_points=[CommandHandler("addphone", add_or_update_phone)],
-    states={
-        PHONE_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)]
+        entry_points=[CommandHandler("addphone", add_or_update_phone)],
+        states={
+            PHONE_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
     )
 
     app.add_handler(onboarding_handler)
@@ -562,51 +558,42 @@ async def main():
     app.add_handler(CallbackQueryHandler(event_detail_callback, pattern=r"^event_\d+$"))
     app.add_handler(CallbackQueryHandler(events_list_callback, pattern=r"^events_list$"))
 
-    print("🚀 Nelius DAO Bot is running... (Press Ctrl+C to stop)")
+    print("🚀 Nelius DAO Bot is running...")
 
-    await set_bot_commands(app)
+    # === WEBHOOK SETUP ===
+    port = PORT
+    await app.bot.delete_webhook()
+    await app.bot.set_webhook(WEBHOOK_URL)
 
-# === WEBHOOK SETUP ===
-    port = int(os.getenv("PORT", 8000))  # Render injects PORT, fallback to 8000
-    
-    # Base URL should be just your domain: "https://your-bot-name.onrender.com"
-    # Do NOT include the token in this WEBHOOK_URL string!
-    base_url = os.getenv("WEBHOOK_URL")
+    print(f"Webhook set at {WEBHOOK_URL} listening on port {port}...")
 
-    print(f"🚀 Starting webhook server on port {port}...")
-
-    # Start the bot framework manually
     await app.initialize()
     await app.start()
-    
-    # start_webhook safely sets the webhook at base_url/token and starts listening
     await app.updater.start_webhook(
         listen="0.0.0.0",
         port=port,
         url_path=TELEGRAM_BOT_TOKEN,
-        webhook_url=f"{base_url.rstrip('/')}/{TELEGRAM_BOT_TOKEN}",
-        secret_token=os.getenv("WEBHOOK_SECRET") # Optional: adds a layer of security
+        webhook_url=WEBHOOK_URL,
     )
 
-    print(f"✅ Webhook active. Listening at {base_url}/{TELEGRAM_BOT_TOKEN[:5]}...")
+    print("Webhook server running. Waiting for Telegram updates...")
 
-    # === GRACEFUL SHUTDOWN FOR RENDER ===
+    # 👇 CRITICAL FIX: Removed the duplicate blocking await asyncio.Event().wait()
+
+    # === SAFE RENDER SHUTDOWN ===
+    # Keep it running forever, but catch Render's stop signal cleanly
     stop_signal = asyncio.Event()
-    
     try:
-        # Keep the bot running forever
         await stop_signal.wait()
     except (KeyboardInterrupt, asyncio.CancelledError):
-        pass  # Render sent the stop signal!
+        pass  # Render triggered a restart
     finally:
-        print("\n🛑 Render shutdown initiated. Cleaning up...")
+        print("\n🛑 Shutting down gracefully...")
         await app.updater.stop()
         await app.stop()
         await app.shutdown()
-        print("✅ Graceful shutdown complete. No DB connections leaked.")
+        await db_pool.close()
+        print("✅ Shutdown complete.")
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(main())
