@@ -1,101 +1,69 @@
 import asyncio
+import asyncpg
 import os
-import re
-import logging
-import requests
-import sqlite3
 import json
-import psycopg
-import redis
 from dotenv import load_dotenv
 from telegram import (Update, KeyboardButton, ReplyKeyboardMarkup, 
                     ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup)
 from telegram.ext import (Application, MessageHandler, CommandHandler, ConversationHandler,
                           CallbackQueryHandler, ContextTypes, filters)
 
-from settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_COMMUNITY_LINK, WHATSAPP_COMMUNITY_LINK, WEBHOOK_URL, PORT, REDIS_URL, get_db_connection
-from generate_and_load_ids import load_to_redis  # import your Social ID loader
-from assign_social_id import assign_social_id  # import your Social ID assignment function
-from nelius_dev import (set_bot_commands, refresh_bot_commands, addevent, updateevent, removeevent,
+from bot.redis_client import cache_user_profile, get_cached_user_profile, cache_events_list, get_cached_events_list
+from config.settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_COMMUNITY_LINK, WHATSAPP_COMMUNITY_LINK, WEBHOOK_URL, PORT, REDIS_URL
+from bot.generate_and_load_ids import load_to_redis  # import your Social ID loader
+from bot.variables import emoji_map
+
+from bot.onboarding import (start_onboarding, PHONE_ENTRY, X_ENTRY, IG_ENTRY, TIKTOK_ENTRY,
+                        save_phone_onboarding, save_x_handle, save_ig_handle, finish_onboarding, cancel_onboarding)  # import onboarding handlers
+from bot.assign_social_id import assign_social_id  # import your Social ID assignment function
+from bot.nelius_dev import (set_bot_commands, refresh_bot_commands, addevent, updateevent, removeevent,
                         updatepub, allocate, dump_db, airtimereward)  # import dev-only commands
-from set_social_media_handles import setx, setig, settiktok  # import social media handle setter
-from set_contact_info import PHONE_ENTRY, add_or_update_phone, save_phone, cancel # import phone number handlers
+from bot.set_social_media_handles import setx, setig, settiktok  # import social media handle setter
+from bot.set_contact_info import PHONE_NUMBER, add_or_update_phone, save_phone, cancel # import phone number handlers
 
 load_dotenv()
 
 # Connect to Redis
-redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+# redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
 
-def init_db():    
-    conn = get_db_connection()
-    cursor = conn.cursor()
+async def init_db(db_pool):
+    """Creates the database tables if they do not exist."""
+    async with db_pool.acquire() as conn:
+        # asyncpg can execute multiple statements in a single block!
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            telegram_id BIGINT UNIQUE,
+            social_id TEXT UNIQUE,
+            phone_number TEXT,
+            points INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            handles JSONB  -- New column to store all social media handles in a single JSONB field
+        );
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        telegram_id BIGINT UNIQUE,
-        social_id TEXT UNIQUE,
-        phone_number TEXT,
-        points INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS events (
-    id SERIAL PRIMARY KEY,
-    title TEXT,
-    instagram_link TEXT,
-    x_link TEXT,
-    tik_tok_link TEXT,
-    publicity_score INTEGER DEFAULT 0
-    )
-    """)
-    
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS social_handles (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        social_id TEXT REFERENCES users(social_id) ON DELETE CASCADE,
-        platform TEXT NOT NULL,
-        handle TEXT,
-        UNIQUE(user_id, platform)
-    )
-    """)
-
-    conn.commit()
-    conn.close()
-
-
-# ------------------------
-# Helper Functions
-# ------------------------
-
-def cache_user_profile(user_id: int, social_id: str, points: int):
-    """Save user profile to Redis cache."""
-    redis_client.setex(f"user:{user_id}", 3600, json.dumps({"social_id": social_id, "points": points}))
-
-
-def get_cached_user_profile(user_id: int):
-    """Retrieve cached user profile, return None if not found."""
-    cached = redis_client.get(f"user:{user_id}")
-    return json.loads(cached) if cached else None
-
-
-def cache_events_list(events: list):
-    """Cache events list for 10 minutes."""
-    redis_client.setex("events:list", 600, json.dumps(events))
-
-
-def get_cached_events_list():
-    cached = redis_client.get("events:list")
-    return json.loads(cached) if cached else None
-
+        CREATE TABLE IF NOT EXISTS events (
+            id SERIAL PRIMARY KEY,
+            title TEXT,
+            links JSONB,  -- Store all links in a JSONB column for flexibility
+            publicity_score INTEGER DEFAULT 0
+        );
+        
+        CREATE TABLE IF NOT EXISTS social_handles (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            social_id TEXT REFERENCES users(social_id) ON DELETE CASCADE,
+            platform TEXT NOT NULL,
+            handle TEXT,
+            UNIQUE(user_id, platform)
+        );
+        """)
+        print("✅ Database tables verified/created.")
 
 # ------------------------
 # Telegram Bot Commands
 # ------------------------
+
 MAIN_MENU = ReplyKeyboardMarkup(
     [
         ["🪪 My ID","🏆 My Points"],
@@ -107,54 +75,59 @@ MAIN_MENU = ReplyKeyboardMarkup(
 )
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    conn = get_db_connection()
-    cursor = conn.cursor()
+# async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     user_id = update.effective_user.id
+#     conn = get_db_connection()
+#     cursor = conn.cursor()
 
-    cursor.execute(
-        "SELECT social_id, points FROM users WHERE telegram_id=%s",
-        (user_id,)
-    )
-    row = cursor.fetchone()
+#     cursor.execute(
+#         "SELECT social_id, points FROM users WHERE telegram_id=%s",
+#         (user_id,)
+#     )
+#     row = cursor.fetchone()
 
-    if not row:
-        social_id = assign_social_id(user_id)
-        cursor.execute(
-            "INSERT INTO users (telegram_id, social_id) VALUES (%s, %s)",
-            (user_id, social_id)
-        )
-        conn.commit()
-        points = 0
-        msg = f"👋 Welcome to Nelius DAO!\nYour Social ID: {social_id}"
-    else:
-        social_id, points = row
-        msg = f"👋 Welcome back!\nYour Social ID: {social_id}\n🏆 Points: {points}"
+#     if not row:
+#         social_id = assign_social_id(user_id)
+#         cursor.execute(
+#             "INSERT INTO users (telegram_id, social_id) VALUES (%s, %s)",
+#             (user_id, social_id)
+#         )
+#         conn.commit()
+#         points = 0
+#         msg = f"👋 Welcome to Nelius DAO!\nYour Social ID: {social_id}"
+#     else:
+#         social_id, points = row
+#         msg = f"👋 Welcome back!\nYour Social ID: {social_id}\n🏆 Points: {points}"
 
-    conn.close()
+#     conn.close()
 
-    cache_user_profile(user_id, social_id, points)
-    await update.message.reply_text(msg, reply_markup=MAIN_MENU)
+#     cache_user_profile(user_id, social_id, points)
+#     await update.message.reply_text(msg, reply_markup=MAIN_MENU)
 
 
 async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    profile = get_cached_user_profile(user_id)
+    # Reminder: if get_cached_user_profile is an async Redis call, make sure to add 'await'
+    profile = await get_cached_user_profile(user_id) 
+    
     if not profile:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT social_id, points FROM users WHERE telegram_id=%s", 
-            (user_id,)
-        )
-        row = cursor.fetchone()
-        conn.close()
+        db_pool = context.bot_data['db_pool']
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT social_id, points FROM users WHERE telegram_id = $1", 
+                user_id
+            )
+            
         if not row:
             await update.message.reply_text("⚠️ You are not registered yet. Use /start to join Nelius.")
             return
-        social_id, points = row
-        cache_user_profile(user_id, social_id, points)
+            
+        # Access by column name from the asyncpg Record object
+        social_id = row['social_id']
+        points = row['points']
+        
+        await cache_user_profile(user_id, social_id, points)
     else:
         social_id = profile["social_id"]
 
@@ -163,22 +136,27 @@ async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def mypoints(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    profile = get_cached_user_profile(user_id)
+    
+    # Reminder: if get_cached_user_profile is an async Redis call, make sure to add 'await'
+    profile = await get_cached_user_profile(user_id)
 
     if not profile:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT social_id, points FROM users WHERE telegram_id=%s", 
-            (user_id,)
-        )
-        row = cursor.fetchone()
-        conn.close()
+        db_pool = context.bot_data['db_pool']
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT social_id, points FROM users WHERE telegram_id = $1", 
+                user_id
+            )
+            
         if not row:
             await update.message.reply_text("⚠️ You are not registered yet. Use /start to join Nelius.")
             return
-        social_id, points = row
-        cache_user_profile(user_id, social_id, points)
+            
+        # Access by column name
+        social_id = row['social_id']
+        points = row['points']
+        
+        await cache_user_profile(user_id, social_id, points)
     else:
         points = profile["points"]
 
@@ -186,24 +164,27 @@ async def mypoints(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def events(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    events_data = get_cached_events_list()
+    # Reminder: if get_cached_events_list is an async Redis call, make sure to add 'await'
+    events_data = await get_cached_events_list()
 
     if not events_data:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, title, publicity_score FROM events ORDER BY id DESC"
-        )
-        rows = cursor.fetchall()
-        conn.close()
+        db_pool = context.bot_data['db_pool']
+        
+        async with db_pool.acquire() as conn:
+            # fetch() replaces fetchall() and returns a list of Record objects
+            rows = await conn.fetch(
+                "SELECT id, title, publicity_score FROM events ORDER BY id DESC"
+            )
 
+        # Build the list by accessing the Record dictionary keys
         events_data = [
-            {"id": eid, "title": title, "score": score} for eid, title, score in rows
+            {"id": row['id'], "title": row['title'], "score": row['publicity_score']} for row in rows
         ]
+        
         # 🔥 Sort by score (highest first)
         events_data.sort(key=lambda x: x["score"], reverse=True)
 
-        cache_events_list(events_data)
+        await cache_events_list(events_data)
 
     else:
         # If cached, also ensure sorted
@@ -251,102 +232,120 @@ async def event_detail_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     event_id = int(data.split("_")[1])
+    db_pool = context.bot_data['db_pool']
 
-    # Fetch event info
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT title, publicity_score, instagram_link, x_link FROM events WHERE id = %s",
-        (event_id,)
-    )
-    row = cursor.fetchone()
-    conn.close()
+    # Fetch event info using the new 'links' JSONB column
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT title, publicity_score, links FROM events WHERE id = $1",
+            event_id
+        )
 
     if not row:
         await query.edit_message_text("❌ Event not found.")
         return
 
-    title, score, iglink, xlink = row
+    # Extract explicitly by column name
+    title = row['title']
+    score = row['publicity_score']
+    
+    # asyncpg returns JSONB as a string by default, so we parse it back into a dictionary
+    raw_links = row['links']
+    links_dict = json.loads(raw_links) if raw_links else {}
 
+    # Update the message text to be platform-agnostic
     msg = (
         f"🎪 *{title}*\n"
         f"⭐ Publicity Score: *{score}*\n\n"
-        f"Use the buttons below to visit the IG or X post.\n"
-        f"Repost it any time you want to boost this event!"
+        f"Use the buttons below to visit the event posts.\n"
+        f"Repost them any time you want to boost this event!"
     )
 
     keyboard = []
-    if iglink:
-        keyboard.append([InlineKeyboardButton("📸 Instagram Post", url=iglink)])
-    if xlink:
-        keyboard.append([InlineKeyboardButton("🐦 X Post", url=xlink)])
+    
+    # A handy map to give popular platforms their recognizable emojis
+    emoji_map = {
+        "instagram": "📸",
+        "x": "🐦",
+        "tiktok": "🎵",
+        "youtube": "▶️",
+        "linkedin": "💼",
+        "facebook": "📘"
+    }
+
+    # Dynamically generate a button for every link in the database!
+    for platform, url in links_dict.items():
+        # Get the emoji if we know it, otherwise use a generic link emoji
+        emoji = emoji_map.get(platform.lower(), "🔗")
+        btn_text = f"{emoji} {platform.capitalize()} Post"
+        
+        keyboard.append([InlineKeyboardButton(btn_text, url=url)])
 
     # Back button
     keyboard.append([InlineKeyboardButton("⬅️ Back to Events", callback_data="events_list")])
 
-    await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.edit_message_text(
+        msg, 
+        parse_mode="Markdown", 
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
 
 async def events_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Directly show events inline, used for initial events list and back button."""
     query = getattr(update, "callback_query", None)
     if query:
         await query.answer()
-    await events(update, context)  # reuse your existing events() function
+    
+    # This just calls your already-refactored events() function!
+    await events(update, context)
 
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    telegram_id = update.effective_user.id
+    db_pool = context.bot_data['db_pool']
 
-    # Fetch user + all handles in one query
-    cursor.execute("""
-        SELECT 
-            u.social_id,
-            u.points,
-            u.phone_number,
-            s.platform,
-            s.handle
-        FROM users u
-        LEFT JOIN social_handles s ON u.id = s.user_id
-        WHERE u.telegram_id = %s
-    """, (update.effective_user.id,))
+    # Fetch all user data in one clean, fast query (no JOINs needed!)
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT social_id, points, phone_number, handles
+            FROM users
+            WHERE telegram_id = $1
+        """, telegram_id)
 
-    rows = cursor.fetchall()
-    conn.close()
-
-    if not rows:
+    if not row:
         await update.message.reply_text("⚠️ You don't have a profile yet. Use /start first.")
         return
 
-    # Basic user info (shared across all rows)
-    social_id = rows[0][0]
-    points = rows[0][1]
-    phone_number = rows[0][2] or "❌ Not set"
+    # Extract basic info
+    social_id = row['social_id']
+    points = row['points']
+    phone_number = row['phone_number'] or "❌ Not set"
 
-    # Extract social handles
-    handles = {"x": None, "instagram": None, "tiktok": None}
+    # Extract handles safely from the JSONB column
+    raw_handles = row['handles']
+    handles_dict = json.loads(raw_handles) if raw_handles else {}
 
-    for _, _, _, platform, handle in rows:
-        if platform in handles:
-            handles[platform] = handle
+    # Build the message dynamically
+    msg_lines = [
+        f"👤 <b>Nelius Profile</b>",
+        f"🪪 Social ID: <code>{social_id}</code>",
+        f"🏆 Points: {points}",
+        f"📞 Phone: {phone_number}",
+        "",
+        f"📱 <b>Social Handles</b>"
+    ]
 
-    display_x = handles["x"] or "❌ Not set"
-    display_ig = handles["instagram"] or "❌ Not set"
-    display_tt = handles["tiktok"] or "❌ Not set"
+    # Dynamically generate handle lines based on whatever is saved
+    if not handles_dict:
+        msg_lines.append("❌ No handles set yet.")
+    else:
+        for platform, handle in handles_dict.items():
+            emoji = emoji_map.get(platform.lower(), "🔗")
+            msg_lines.append(f"{emoji} {platform.capitalize()}: {handle}")
 
-    # Build the message
-    msg = (
-        f"👤 <b>Nelius Profile</b>\n"
-        f"🪪 Social ID: <code>{social_id}</code>\n"
-        f"🏆 Points: {points}\n"
-        f"📞 Phone: {phone_number}\n\n"
-        f"📱 <b>Social Handles</b>\n"
-        f"🐦 X: {display_x}\n"
-        f"📸 Instagram: {display_ig}\n"
-        # f"🎵 TikTok: {display_tt}"
-    )
-
-    await update.message.reply_text(msg, parse_mode="HTML")
+    # Join the lines with line breaks and send
+    await update.message.reply_text("\n".join(msg_lines), parse_mode="HTML")
 
 
 async def join_telegram_community(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -371,25 +370,172 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "👤 My Profile":
         await profile(update, context)
 
+
+# ------------------------
+# Startup & Shutdown Hooks
+# ------------------------
+async def post_init(application: Application):
+    """Runs automatically when the bot starts."""
+    # 1. Preload Redis IDs inside the bot's native event loop
+    await load_to_redis()
+
+    # 2. Create the asyncpg connection pool
+    application.bot_data['db_pool'] = await asyncpg.create_pool(DATABASE_URL)
+    print("✅ Database pool created.")
+    
+    # 3. Initialize tables using the pool we just created!
+    await init_db(application.bot_data['db_pool'])
+    
+    # 4. Set bot commands
+    await set_bot_commands(application)
+    print("✅ Bot commands registered.")
+
+async def post_shutdown(application: Application):
+    """Runs automatically when the bot is stopped (Ctrl+C)."""
+    # Cleanly close the database connections
+    db_pool = application.bot_data.get('db_pool')
+    if db_pool:
+        await db_pool.close()
+        print("🛑 Database pool closed.")
+
+
+# ------------------------
+# Main Entry Point
+# ------------------------
+# async def main():
+#     # 1. Start external services natively inside the main loop
+#     await load_to_redis()
+#     db_pool = await asyncpg.create_pool(DATABASE_URL)
+#     await init_db(db_pool)
+
+#     # 2. Build the Application
+#     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    
+#     # Store the db_pool so your handlers can access it!
+#     app.bot_data['db_pool'] = db_pool
+
+#     # 3. Add Handlers
+#     onboarding_handler = ConversationHandler(
+#         entry_points=[CommandHandler("start", start_onboarding)],
+#         states={
+#             PHONE_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone_onboarding)],
+#             X_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_x_handle)],
+#             IG_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_ig_handle)],
+#             TIKTOK_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, finish_onboarding)],
+#         },
+#         fallbacks=[CommandHandler("cancel", cancel_onboarding)]
+#     )
+    
+#     add_phone_handler = ConversationHandler(
+#         entry_points=[CommandHandler("addphone", add_or_update_phone)],
+#         states={
+#             PHONE_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone)],
+#         },
+#         fallbacks=[CommandHandler("cancel", cancel)]
+#     )
+
+#     app.add_handler(onboarding_handler)
+#     app.add_handler(add_phone_handler)
+
+#     # Basic commands
+#     app.add_handler(CommandHandler("start", start_onboarding))
+#     app.add_handler(CommandHandler("myid", myid))
+#     app.add_handler(CommandHandler("mypoints", mypoints))
+#     app.add_handler(CommandHandler("events", events))
+#     app.add_handler(CommandHandler("profile", profile))
+#     app.add_handler(CommandHandler("setx", setx))
+#     app.add_handler(CommandHandler("setig", setig))
+#     app.add_handler(CommandHandler("settiktok", settiktok))
+#     app.add_handler(CommandHandler("jointelegramcommunity", join_telegram_community))
+#     app.add_handler(CommandHandler("joinwhatsappcommunity", join_whatsapp_community))
+
+#     # Button interactions
+#     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
+    
+#     # Dev commands
+#     app.add_handler(CommandHandler("addevent", addevent))
+#     app.add_handler(CommandHandler("updateevent", updateevent))
+#     app.add_handler(CommandHandler("removeevent", removeevent))
+#     app.add_handler(CommandHandler("updatepub", updatepub))
+#     app.add_handler(CommandHandler("allocate", allocate))
+#     app.add_handler(CommandHandler("refreshbotcommands", refresh_bot_commands))
+#     app.add_handler(CommandHandler("dump_db", dump_db))
+#     app.add_handler(CommandHandler("airtimereward", airtimereward))
+
+#     app.add_handler(CallbackQueryHandler(event_detail_callback, pattern=r"^event_\d+$"))
+#     app.add_handler(CallbackQueryHandler(events_list_callback, pattern=r"^events_list$"))
+
+#     # 4. Set bot commands natively
+#     await set_bot_commands(app)
+
+#     # 5. MANUALLY START THE BOT (Replaces app.run_polling())
+#     await app.initialize()
+#     await app.start()
+#     await app.updater.start_polling()
+
+#     print("🚀 Nelius DAO Bot is running... (Press Ctrl+C to stop)")
+
+#     # 6. Keep the bot alive and handle graceful shutdown
+#     stop_signal = asyncio.Event()
+#     try:
+#         await stop_signal.wait()  # Blocks here forever while the bot runs
+#     except asyncio.CancelledError:
+#         pass
+#     finally:
+#         print("\n🛑 Shutting down gracefully...")
+#         await app.updater.stop()
+#         await app.stop()
+#         await app.shutdown()
+#         await db_pool.close()
+#         print("✅ Shutdown complete.")
+
+# if __name__ == "__main__":
+#     try:
+#         # This is the ONLY event loop created in the entire application
+#         asyncio.run(main())
+#     except KeyboardInterrupt:
+#         pass # Expected behavior when stopping the bot
+
 # ------------------------
 # Main Entry Point
 # ------------------------
 async def main():
-    init_db()
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    await load_to_redis()  # Preload Social IDs into Redis
+
+    app = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .build()
+    )
+
+    # app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+    onboarding_handler = ConversationHandler(
+    entry_points=[CommandHandler("start", start_onboarding)],
+    states={
+        PHONE_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone_onboarding)],
+        X_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_x_handle)],
+        IG_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_ig_handle)],
+        TIKTOK_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, finish_onboarding)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel_onboarding)]
+)
     
     add_phone_handler = ConversationHandler(
     entry_points=[CommandHandler("addphone", add_or_update_phone)],
     states={
-        PHONE_ENTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone)],
+        PHONE_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_phone)],
     },
     fallbacks=[CommandHandler("cancel", cancel)]
     )
 
+    app.add_handler(onboarding_handler)
     app.add_handler(add_phone_handler)
 
     # Basic commands
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("start", start_onboarding))
     app.add_handler(CommandHandler("myid", myid))
     app.add_handler(CommandHandler("mypoints", mypoints))
     app.add_handler(CommandHandler("events", events))
@@ -416,37 +562,51 @@ async def main():
     app.add_handler(CallbackQueryHandler(event_detail_callback, pattern=r"^event_\d+$"))
     app.add_handler(CallbackQueryHandler(events_list_callback, pattern=r"^events_list$"))
 
-    print("Nelius DAO Bot is running...")
+    print("🚀 Nelius DAO Bot is running... (Press Ctrl+C to stop)")
 
     await set_bot_commands(app)
-    # asyncio.get_event_loop().run_until_complete(set_bot_commands(app))
-    # app.run_polling()
 
-    # === WEBHOOK SETUP ===
-    # === WEBHOOK CONFIG ===
-    port = int(os.getenv("PORT", PORT))
-    await app.bot.delete_webhook()
-    await app.bot.set_webhook(WEBHOOK_URL)
+# === WEBHOOK SETUP ===
+    port = int(os.getenv("PORT", 8000))  # Render injects PORT, fallback to 8000
+    
+    # Base URL should be just your domain: "https://your-bot-name.onrender.com"
+    # Do NOT include the token in this WEBHOOK_URL string!
+    base_url = WEBHOOK_URL
 
-    print(f"Webhook set at {WEBHOOK_URL} listening on port {port}...")
+    print(f"🚀 Starting webhook server on port {port}...")
 
-    # 👇 FIXED PART
-    # run_webhook() tries to close loop internally — Render keeps it alive.
-    # So we just run the internal webhook startup manually:
+    # Start the bot framework manually
     await app.initialize()
     await app.start()
+    
+    # start_webhook safely sets the webhook at base_url/token and starts listening
     await app.updater.start_webhook(
         listen="0.0.0.0",
         port=port,
         url_path=TELEGRAM_BOT_TOKEN,
-        webhook_url=WEBHOOK_URL,
+        webhook_url=f"{base_url.rstrip('/')}/{TELEGRAM_BOT_TOKEN}",
+        secret_token=os.getenv("WEBHOOK_SECRET") # Optional: adds a layer of security
     )
 
-    print("Webhook server running. Waiting for Telegram updates...")
+    print(f"✅ Webhook active. Listening at {base_url}/{TELEGRAM_BOT_TOKEN[:5]}...")
 
-    # Keep it running forever
-    await asyncio.Event().wait()
+    # === GRACEFUL SHUTDOWN FOR RENDER ===
+    stop_signal = asyncio.Event()
+    
+    try:
+        # Keep the bot running forever
+        await stop_signal.wait()
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        pass  # Render sent the stop signal!
+    finally:
+        print("\n🛑 Render shutdown initiated. Cleaning up...")
+        await app.updater.stop()
+        await app.stop()
+        await app.shutdown()
+        print("✅ Graceful shutdown complete. No DB connections leaked.")
 
 if __name__ == "__main__":
-    load_to_redis()  # Preload Social IDs into Redis
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

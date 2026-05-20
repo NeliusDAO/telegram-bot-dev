@@ -1,12 +1,16 @@
 import requests
 import json
+import logging
 import time
 import os
 from typing import List, Dict, Optional
 from datetime import datetime
 from urllib.parse import urlencode
 
-from settings import BLEEPRS_API_KEY
+from config.settings import BLEEPRS_API_KEY, PHONEVERIFY_API_KEY
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__).info
 
 
 def get_network_from_prefix(phone_number: str) -> Optional[str]:
@@ -38,6 +42,7 @@ def get_network_from_prefix(phone_number: str) -> Optional[str]:
         if prefix in prefixes:
             return network
     
+    log(f"Error getting carrier from prefix {prefix}: {Exception('Unknown carrier prefix')}")
     return None
 
 
@@ -53,7 +58,7 @@ def get_network_from_api(phone_number: str) -> Optional[str]:
     """
     try:
         base_url = 'http://apilayer.net/api/validate'
-        access_key = os.getenv('PHONEVERIFY_API_KEY', '')
+        access_key = PHONEVERIFY_API_KEY or ''
         
         if not access_key:
             return None
@@ -109,6 +114,9 @@ def get_carrier_from_phone(phone_number: str) -> Optional[str]:
     carrier = get_network_from_api(phone_number)
     if carrier:
         return carrier
+    # elif carrier is None:
+    #     # Fallback to local prefix lookup if API fails or returns None
+    #     return get_network_from_prefix(phone_number)
     
     return None
 
