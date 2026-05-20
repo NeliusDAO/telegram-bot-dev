@@ -361,7 +361,7 @@ async def join_whatsapp_community(update: Update, context: ContextTypes.DEFAULT_
 # --- Button text handler ---
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    # print(f"🛑 handle_buttons caught this text: {text}")
+    print(f"🛑 handle_buttons caught this text: {text}")
     if text == "🪪 My ID":
         await myid(update, context)
     elif text == "🏆 My Points":
