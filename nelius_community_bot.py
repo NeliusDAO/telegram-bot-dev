@@ -510,13 +510,12 @@ async def main():
     )
 
     # Button interactions
-    # Extract the raw .text property from each KeyboardButton object
-    flat_main_menu = [button.text for row in MAIN_MENU.keyboard for button in row]
-
-    # === 2. PLACE CATCHERS IN CORRECT PRIORITY ORDER ===
-    
-    # First: Intercept main menu button presses immediately (acts as a global escape hatch)
-    app.add_handler(MessageHandler(filters.Text(flat_main_menu), handle_buttons))
+# ======================================================================
+    # Button interactions (LIFTED ABOVE THE CONVERSATIONS AS A GLOBAL ESCAPE)
+    # ======================================================================
+    # This regex catches the exact text sent by your 4 grid buttons, ignoring emojis
+    menu_pattern = r"My ID|My Points|Events|My Profile"
+    app.add_handler(MessageHandler(filters.Regex(menu_pattern), handle_buttons))
 
     onboarding_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_onboarding)],
