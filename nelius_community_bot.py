@@ -13,7 +13,7 @@ from config.settings import DATABASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_COMMUNITY
 from bot.generate_and_load_ids import load_to_redis  # import your Social ID loader
 from bot.variables import emoji_map
 
-from bot.onboarding import (start_onboarding, PHONE_ENTRY, X_ENTRY, IG_ENTRY, TIKTOK_ENTRY,
+from bot.onboarding import (start_onboarding, PHONE_ENTRY, X_ENTRY, IG_ENTRY, TIKTOK_ENTRY, MAIN_MENU,
                         save_phone_onboarding, save_x_handle, save_ig_handle, finish_onboarding, cancel_onboarding)  # import onboarding handlers
 from bot.assign_social_id import assign_social_id  # import your Social ID assignment function
 from bot.nelius_dev import (set_bot_commands, refresh_bot_commands, addevent, updateevent, removeevent,
@@ -64,15 +64,15 @@ async def init_db(db_pool):
 # Telegram Bot Commands
 # ------------------------
 
-MAIN_MENU = ReplyKeyboardMarkup(
-    [
-        ["🪪 My ID","🏆 My Points"],
-        ["🎉 Events","👤 My Profile"],
-    ],
-    resize_keyboard=True,
-    one_time_keyboard=False,
-    is_persistent=True
-)
+# MAIN_MENU = ReplyKeyboardMarkup(
+#     [
+#         ["🪪 My ID","🏆 My Points"],
+#         ["🎉 Events","👤 My Profile"],
+#     ],
+#     resize_keyboard=True,
+#     one_time_keyboard=False,
+#     is_persistent=True
+# )
 
 
 # async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
