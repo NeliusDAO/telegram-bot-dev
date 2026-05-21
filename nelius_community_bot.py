@@ -26,40 +26,6 @@ load_dotenv()
 # Connect to Redis
 # redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
-
-async def init_db(db_pool):
-    """Creates the database tables if they do not exist."""
-    async with db_pool.acquire() as conn:
-        # asyncpg can execute multiple statements in a single block!
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            telegram_id BIGINT UNIQUE,
-            social_id TEXT UNIQUE,
-            phone_number TEXT,
-            points INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            handles JSONB  -- New column to store all social media handles in a single JSONB field
-        );
-
-        CREATE TABLE IF NOT EXISTS events (
-            id SERIAL PRIMARY KEY,
-            title TEXT,
-            links JSONB,  -- Store all links in a JSONB column for flexibility
-            publicity_score INTEGER DEFAULT 0
-        );
-        
-        CREATE TABLE IF NOT EXISTS social_handles (
-            id SERIAL PRIMARY KEY,
-            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-            social_id TEXT REFERENCES users(social_id) ON DELETE CASCADE,
-            platform TEXT NOT NULL,
-            handle TEXT,
-            UNIQUE(user_id, platform)
-        );
-        """)
-        print("✅ Database tables verified/created.")
-
 # ------------------------
 # Telegram Bot Commands
 # ------------------------
@@ -111,8 +77,13 @@ async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Reminder: if get_cached_user_profile is an async Redis call, make sure to add 'await'
     profile = await get_cached_user_profile(user_id) 
     
+    
     if not profile:
-        db_pool = context.bot_data['db_pool']
+        db_pool = context.bot_data.get('db_pool')
+        if not db_pool:
+            await update.message.reply_text("⏳ System is booting up... Please try again in a moment!")
+            print("⚠️ DEBUG: 'db_pool' is missing in mypoints.")
+            return
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT social_id, points FROM users WHERE telegram_id = $1", 
@@ -141,7 +112,11 @@ async def mypoints(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await get_cached_user_profile(user_id)
 
     if not profile:
-        db_pool = context.bot_data['db_pool']
+        db_pool = context.bot_data.get('db_pool')
+        if not db_pool:
+            await update.message.reply_text("⏳ System is booting up... Please try again in a moment!")
+            print("⚠️ DEBUG: 'db_pool' is missing in mypoints.")
+            return
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT social_id, points FROM users WHERE telegram_id = $1", 
@@ -168,7 +143,7 @@ async def events(update: Update, context: ContextTypes.DEFAULT_TYPE):
     events_data = await get_cached_events_list()
 
     if not events_data:
-        db_pool = context.bot_data['db_pool']
+        db_pool = context.bot_data.get('db_pool')
         
         async with db_pool.acquire() as conn:
             # fetch() replaces fetchall() and returns a list of Record objects
@@ -232,7 +207,7 @@ async def event_detail_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     event_id = int(data.split("_")[1])
-    db_pool = context.bot_data['db_pool']
+    db_pool = context.bot_data.get('db_pool')
 
     # Fetch event info using the new 'links' JSONB column
     async with db_pool.acquire() as conn:
@@ -303,7 +278,7 @@ async def events_list_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
-    db_pool = context.bot_data['db_pool']
+    db_pool = context.bot_data.get('db_pool')
 
     # Fetch all user data in one clean, fast query (no JOINs needed!)
     async with db_pool.acquire() as conn:
@@ -373,47 +348,22 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ------------------------
-# Startup & Shutdown Hooks
-# ------------------------
-async def post_init(application: Application):
-    """Runs automatically when the bot starts."""
-    # 1. Preload Redis IDs inside the bot's native event loop
-    await load_to_redis()
-
-    # 2. Create the asyncpg connection pool
-    application.bot_data['db_pool'] = await asyncpg.create_pool(DATABASE_URL)
-    print("✅ Database pool created.")
-    
-    # 3. Initialize tables using the pool we just created!
-    await init_db_pool(application.bot_data['db_pool'])
-    
-    # 4. Set bot commands
-    await set_bot_commands(application)
-    print("✅ Bot commands registered.")
-
-async def post_shutdown(application: Application):
-    """Runs automatically when the bot is stopped (Ctrl+C)."""
-    # Cleanly close the database connections
-    db_pool = application.bot_data.get('db_pool')
-    if db_pool:
-        await db_pool.close()
-        print("🛑 Database pool closed.")
-
-
-# ------------------------
 # Main Entry Point Locally (for development/testing)
 # ------------------------
 # async def main():
 #     # 1. Start external services natively inside the main loop
 #     await load_to_redis()
 #     db_pool = await asyncpg.create_pool(DATABASE_URL)
-#     await init_db(db_pool)
 
 #     # 2. Build the Application
 #     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
 #     # Store the db_pool so your handlers can access it!
 #     app.bot_data['db_pool'] = db_pool
+
+#     menu_pattern = r"My ID|My Points|Events|My Profile"
+#     app.add_handler(MessageHandler(filters.Regex(menu_pattern), handle_buttons))
+
 
 #     # 3. Add Handlers
 #     onboarding_handler = ConversationHandler(
@@ -451,7 +401,7 @@ async def post_shutdown(application: Application):
 #     app.add_handler(CommandHandler("joinwhatsappcommunity", join_whatsapp_community))
 
 #     # Button interactions
-#     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
+#     # app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
     
 #     # Dev commands
 #     app.add_handler(CommandHandler("addevent", addevent))
@@ -487,7 +437,7 @@ async def post_shutdown(application: Application):
 #         await app.updater.stop()
 #         await app.stop()
 #         await app.shutdown()
-#         await db_pool.close()
+#         # await db_pool.close()
 #         print("✅ Shutdown complete.")
 
 # if __name__ == "__main__":
@@ -501,16 +451,16 @@ async def post_shutdown(application: Application):
 # Main Entry Point
 # ------------------------
 async def main():
-    app = (
-        Application.builder()
-        .token(TELEGRAM_BOT_TOKEN)
-        .post_init(post_init)
-        .post_shutdown(post_shutdown)
-        .build()
-    )
+    await load_to_redis()
+    db_pool = await asyncpg.create_pool(DATABASE_URL)
 
-    # Button interactions
-# ======================================================================
+    # 2. Build the Application
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    
+    # Store the db_pool so your handlers can access it!
+    app.bot_data['db_pool'] = db_pool
+
+    # ======================================================================
     # Button interactions (LIFTED ABOVE THE CONVERSATIONS AS A GLOBAL ESCAPE)
     # ======================================================================
     # This regex catches the exact text sent by your 4 grid buttons, ignoring emojis
