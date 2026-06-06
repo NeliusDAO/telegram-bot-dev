@@ -159,14 +159,16 @@ class BleeprsAirtimeClient:
         if not network:
             phone = "234" + phone[1:]
             network = get_carrier_from_phone(phone)
+            network = (network.upper() if isinstance(network, str) else network)
             print(network)
 
         # Bleeprs expects an array of objects with keys: phoneNumber, network, amount
         payload = [
             {
                 "phoneNumber": phone,
-                "network": (network.lower() if isinstance(network, str) else network),
-                "amount": amount
+                "network": network,
+                "amount": amount,
+                "productCode": f"LA_{network}"
             }
         ]
         
